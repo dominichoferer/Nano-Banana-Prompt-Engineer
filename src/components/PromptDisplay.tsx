@@ -1,5 +1,5 @@
 import { useRef, useEffect } from 'react'
-import type { AnalysisStatus, AspectRatio } from '../types'
+import type { AnalysisStatus, AspectRatio, Resolution } from '../types'
 
 interface Props {
   prompt: string
@@ -7,16 +7,28 @@ interface Props {
   status: AnalysisStatus
   aspectRatio: AspectRatio
   onAspectRatioChange: (ratio: AspectRatio) => void
+  resolution: Resolution
+  onResolutionChange: (res: Resolution) => void
   onGenerate: () => void
   isGenerating: boolean
 }
 
 const ASPECT_RATIOS: { value: AspectRatio; label: string; icon: string }[] = [
-  { value: '1:1',  label: 'Square',    icon: '⬜' },
-  { value: '16:9', label: 'Landscape', icon: '🖥️' },
-  { value: '9:16', label: 'Portrait',  icon: '📱' },
-  { value: '4:3',  label: '4:3',       icon: '📺' },
-  { value: '3:4',  label: '3:4',       icon: '📄' },
+  { value: '1:1',  label: '1:1',  icon: '⬜' },
+  { value: '16:9', label: '16:9', icon: '🖥️' },
+  { value: '9:16', label: '9:16', icon: '📱' },
+  { value: '4:3',  label: '4:3',  icon: '📺' },
+  { value: '3:4',  label: '3:4',  icon: '📄' },
+  { value: '2:3',  label: '2:3',  icon: '📐' },
+  { value: '3:2',  label: '3:2',  icon: '🖼️' },
+  { value: '5:4',  label: '5:4',  icon: '🟫' },
+  { value: '4:5',  label: '4:5',  icon: '🗂️' },
+]
+
+const RESOLUTIONS: { value: Resolution; label: string; desc: string }[] = [
+  { value: '1K', label: '1K', desc: '1024 px' },
+  { value: '2K', label: '2K', desc: '2048 px' },
+  { value: '4K', label: '4K', desc: '4096 px' },
 ]
 
 const PROMPT_ENHANCERS = [
@@ -38,6 +50,8 @@ export default function PromptDisplay({
   status,
   aspectRatio,
   onAspectRatioChange,
+  resolution,
+  onResolutionChange,
   onGenerate,
   isGenerating,
 }: Props) {
@@ -144,27 +158,52 @@ export default function PromptDisplay({
         </div>
       )}
 
-      {/* Aspect Ratio Selector */}
-      <div className="flex flex-col gap-2">
-        <span className="section-label">Aspect Ratio</span>
-        <div className="flex gap-1.5 flex-wrap">
-          {ASPECT_RATIOS.map((r) => (
-            <button
-              key={r.value}
-              onClick={() => onAspectRatioChange(r.value)}
-              className={`
-                flex items-center gap-1.5 text-xs px-3 py-2 rounded-xl border transition-all duration-150
-                ${aspectRatio === r.value
-                  ? 'border-banana-500 bg-banana-500/10 text-banana-400 font-semibold'
-                  : 'border-[#3a3a3a] text-dark-400 hover:border-[#4a4a4a] hover:text-white'
-                }
-              `}
-            >
-              <span>{r.icon}</span>
-              <span>{r.label}</span>
-              <span className="text-dark-500">({r.value})</span>
-            </button>
-          ))}
+      {/* Aspect Ratio + Resolution Row */}
+      <div className="flex flex-col gap-3">
+        {/* Aspect Ratio */}
+        <div className="flex flex-col gap-2">
+          <span className="section-label">Aspect Ratio</span>
+          <div className="flex gap-1.5 flex-wrap">
+            {ASPECT_RATIOS.map((r) => (
+              <button
+                key={r.value}
+                onClick={() => onAspectRatioChange(r.value)}
+                className={`
+                  flex items-center gap-1 text-xs px-2.5 py-1.5 rounded-xl border transition-all duration-150
+                  ${aspectRatio === r.value
+                    ? 'border-banana-500 bg-banana-500/10 text-banana-400 font-semibold'
+                    : 'border-[#3a3a3a] text-dark-400 hover:border-[#4a4a4a] hover:text-white'
+                  }
+                `}
+              >
+                <span>{r.icon}</span>
+                <span>{r.label}</span>
+              </button>
+            ))}
+          </div>
+        </div>
+
+        {/* Resolution */}
+        <div className="flex flex-col gap-2">
+          <span className="section-label">Resolution</span>
+          <div className="flex gap-2">
+            {RESOLUTIONS.map((r) => (
+              <button
+                key={r.value}
+                onClick={() => onResolutionChange(r.value)}
+                className={`
+                  flex flex-col items-center px-4 py-2 rounded-xl border transition-all duration-150
+                  ${resolution === r.value
+                    ? 'border-banana-500 bg-banana-500/10 text-banana-400 font-semibold'
+                    : 'border-[#3a3a3a] text-dark-400 hover:border-[#4a4a4a] hover:text-white'
+                  }
+                `}
+              >
+                <span className="text-sm font-bold">{r.label}</span>
+                <span className="text-xs text-dark-500">{r.desc}</span>
+              </button>
+            ))}
+          </div>
         </div>
       </div>
 

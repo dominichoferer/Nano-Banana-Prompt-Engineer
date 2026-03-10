@@ -17,14 +17,19 @@ When analyzing images, you extract and describe:
 
 Output format: A single, flowing, optimized prompt using comma-separated descriptive phrases. Start with the most important subject, then style, then technical details. Include quality boosters at the end. Do NOT include explanatory text or labels — just the pure prompt.`
 
-const USER_TEMPLATE = (count: number) =>
-  count === 1
-    ? `Analyze this reference image and generate the ultimate AI image generation prompt that would recreate it exactly. Be exhaustively detailed — capture every visual nuance, style element, lighting condition, and compositional choice. The prompt should be so precise that the generated image is virtually identical to the reference.`
-    : `Analyze these ${count} reference images and generate the ultimate AI image generation prompt. Identify the dominant visual style, composition principles, color palette, lighting setup, and key aesthetic elements that are consistent across all images. Create a unified prompt that captures the essence and style of this image collection.`
+const USER_TEMPLATE = (count: number, userDescription?: string) => {
+  const descPart = userDescription
+    ? `\n\nAdditional user intent: "${userDescription}". Incorporate this intent into the prompt while staying true to the visual style of the reference image(s).`
+    : ''
+  return count === 1
+    ? `Analyze this reference image and generate the ultimate AI image generation prompt that would recreate it exactly. Be exhaustively detailed — capture every visual nuance, style element, lighting condition, and compositional choice. The prompt should be so precise that the generated image is virtually identical to the reference.${descPart}`
+    : `Analyze these ${count} reference images and generate the ultimate AI image generation prompt. Identify the dominant visual style, composition principles, color palette, lighting setup, and key aesthetic elements that are consistent across all images. Create a unified prompt that captures the essence and style of this image collection.${descPart}`
+}
 
 export async function analyzeImages(req: Request, res: Response) {
   try {
     const files = req.files as Express.Multer.File[]
+    const userDescription = req.body?.userDescription as string | undefined
 
     if (!files || files.length === 0) {
       return res.status(400).json({ error: 'No images provided' })
@@ -48,7 +53,7 @@ export async function analyzeImages(req: Request, res: Response) {
 
     const textContent: Anthropic.TextBlockParam = {
       type: 'text',
-      text: USER_TEMPLATE(files.length),
+      text: USER_TEMPLATE(files.length, userDescription),
     }
 
     // Set SSE headers for streaming response

@@ -7,13 +7,16 @@ import type {
   AnalysisStatus,
   GenerationStatus,
   AspectRatio,
+  Resolution,
   GenerateResponse,
 } from './types'
 
 export default function App() {
   const [images, setImages] = useState<UploadedImage[]>([])
+  const [userDescription, setUserDescription] = useState('')
   const [prompt, setPrompt] = useState('')
   const [aspectRatio, setAspectRatio] = useState<AspectRatio>('1:1')
+  const [resolution, setResolution] = useState<Resolution>('1K')
   const [analysisStatus, setAnalysisStatus] = useState<AnalysisStatus>('idle')
   const [analysisError, setAnalysisError] = useState<string | null>(null)
   const [generationStatus, setGenerationStatus] = useState<GenerationStatus>('idle')
@@ -32,6 +35,7 @@ export default function App() {
     try {
       const formData = new FormData()
       images.forEach((img) => formData.append('images', img.file))
+      if (userDescription.trim()) formData.append('userDescription', userDescription.trim())
 
       const response = await fetch('/api/analyze', {
         method: 'POST',
@@ -93,7 +97,7 @@ export default function App() {
       const response = await fetch('/api/generate', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ prompt: prompt.trim(), aspectRatio }),
+        body: JSON.stringify({ prompt: prompt.trim(), aspectRatio, resolution }),
       })
 
       if (!response.ok) {
@@ -110,7 +114,7 @@ export default function App() {
       setGenerationError(message)
       setGenerationStatus('error')
     }
-  }, [prompt, aspectRatio])
+  }, [prompt, aspectRatio, resolution])
 
   const canAnalyze = images.length > 0 && analysisStatus !== 'analyzing'
 
@@ -187,6 +191,18 @@ export default function App() {
               disabled={analysisStatus === 'analyzing'}
             />
 
+            {/* User Description */}
+            <div className="flex flex-col gap-2">
+              <span className="section-label">Describe what you want (optional)</span>
+              <textarea
+                value={userDescription}
+                onChange={(e) => setUserDescription(e.target.value)}
+                disabled={analysisStatus === 'analyzing'}
+                placeholder="e.g. A product photo of a sneaker on a clean white background, studio lighting, sharp shadows…"
+                className="w-full resize-none input-field text-sm leading-relaxed min-h-[80px] max-h-[160px]"
+              />
+            </div>
+
             {/* Analyze Button */}
             <button
               onClick={handleAnalyze}
@@ -245,6 +261,8 @@ export default function App() {
               status={analysisStatus}
               aspectRatio={aspectRatio}
               onAspectRatioChange={setAspectRatio}
+              resolution={resolution}
+              onResolutionChange={setResolution}
               onGenerate={handleGenerate}
               isGenerating={generationStatus === 'generating'}
             />
