@@ -7,10 +7,14 @@ interface GeminiResponse {
   error?: { message: string; code: number }
 }
 
-const RESOLUTION_PX: Record<string, number> = {
-  '1K': 1024,
-  '2K': 2048,
-  '4K': 4096,
+// Ratios natively supported by Gemini imageGenerationConfig
+const SUPPORTED_API_RATIOS = new Set(['1:1', '16:9', '9:16', '4:3', '3:4'])
+
+// Resolution quality hints mapped to prompt + API parameters
+const RESOLUTION_CONFIG: Record<string, { hint: string; quality: string }> = {
+  '1K': { hint: 'high quality, 1024px',           quality: 'standard' },
+  '2K': { hint: 'ultra high quality, 2K, 2048px', quality: 'high'     },
+  '4K': { hint: 'ultra HD, 4K, 4096px, hyper-detailed, maximum quality, ultra sharp', quality: 'high' },
 }
 
 export async function generateImage(req: Request, res: Response) {
@@ -25,11 +29,19 @@ export async function generateImage(req: Request, res: Response) {
 
     const apiKey = process.env.GOOGLE_AI_API_KEY
 
-    // Build an enriched prompt with aspect ratio + resolution hints
-    const resPx = resolution ? RESOLUTION_PX[resolution] : null
-    const ratioHint = aspectRatio ? `, aspect ratio ${aspectRatio}` : ''
-    const resHint = resPx ? `, ${resolution} resolution (${resPx}px)` : ''
+    // Enrich prompt with resolution quality descriptors
+    const resCfg = resolution ? RESOLUTION_CONFIG[resolution] : null
+    const resHint = resCfg ? `, ${resCfg.hint}` : ''
+
+    // Include aspect ratio as prompt hint if not natively supported by API
+    const nativeRatio = aspectRatio && SUPPORTED_API_RATIOS.has(aspectRatio)
+    const ratioHint = aspectRatio && !nativeRatio ? `, ${aspectRatio} aspect ratio` : ''
+
     const p = `${prompt.trim()}${ratioHint}${resHint}`.trim()
+
+    // Build imageGenerationConfig with only supported parameters
+    const imageGenerationConfig: Record<string, string> = {}
+    if (nativeRatio && aspectRatio) imageGenerationConfig.aspectRatio = aspectRatio
 
     const url = `https://generativelanguage.googleapis.com/v1beta/models/gemini-3-pro-image-preview:generateContent?key=${apiKey}`
     const fetchRes = await fetch(url, {
@@ -39,7 +51,9 @@ export async function generateImage(req: Request, res: Response) {
         contents: [{ parts: [{ text: p }] }],
         generationConfig: {
           responseModalities: ['IMAGE', 'TEXT'],
-          ...(aspectRatio ? { aspectRatio: aspectRatio.replace(':', '_') } : {}),
+          ...(Object.keys(imageGenerationConfig).length > 0
+            ? { imageGenerationConfig }
+            : {}),
         },
       }),
     })
