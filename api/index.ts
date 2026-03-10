@@ -2,7 +2,6 @@ import express from 'express'
 import cors from 'cors'
 import multer from 'multer'
 import Anthropic from '@anthropic-ai/sdk'
-import { GoogleGenAI } from '@google/genai'
 import type { Request, Response } from 'express'
 
 const app = express()
@@ -106,7 +105,9 @@ app.post('/api/analyze', upload.array('images', 10), async (req: Request, res: R
   }
 })
 
-// ── Generate Image with Google Imagen 3 ───────────────────────────────────
+// ── Generate Image with Google Imagen 3 (direct REST API) ─────────────────
+// The @google/genai SDK builds incorrect URLs for AI Studio API keys.
+// We use the documented REST endpoint directly instead.
 
 app.post('/api/generate', async (req: Request, res: Response) => {
   try {
@@ -119,35 +120,41 @@ app.post('/api/generate', async (req: Request, res: Response) => {
       return res.status(500).json({ error: 'GOOGLE_AI_API_KEY not configured' })
     }
 
-    // httpOptions.apiVersion must be 'v1' — imagen-3.0-generate-002 is not
-    // available on the default v1beta endpoint used by this SDK version
-    const client = new GoogleGenAI({
-      apiKey: process.env.GOOGLE_AI_API_KEY,
-      httpOptions: { apiVersion: 'v1' },
+    const apiKey = process.env.GOOGLE_AI_API_KEY
+    const url = `https://generativelanguage.googleapis.com/v1beta/models/imagen-3.0-generate-002:predict?key=${apiKey}`
+
+    const googleRes = await fetch(url, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        instances: [{ prompt: prompt.trim() }],
+        parameters: {
+          sampleCount: 1,
+          aspectRatio,
+        },
+      }),
     })
 
-    const response = await client.models.generateImages({
-      model: 'imagen-3.0-generate-002',
-      prompt: prompt.trim(),
-      config: {
-        numberOfImages: 1,
-        outputMimeType: 'image/jpeg',
-        aspectRatio: aspectRatio as '1:1' | '16:9' | '9:16' | '4:3' | '3:4',
-      },
-    })
-
-    const generatedImage = response.generatedImages?.[0]
-    if (!generatedImage?.image?.imageBytes) {
-      return res.status(500).json({ error: 'No image generated. The prompt may have triggered safety filters.' })
+    const data = await googleRes.json() as {
+      predictions?: Array<{ bytesBase64Encoded?: string; mimeType?: string }>
+      error?: { message: string; code: number }
     }
 
-    const { imageBytes } = generatedImage.image
-    const base64 =
-      typeof imageBytes === 'string'
-        ? imageBytes
-        : Buffer.from(imageBytes as Uint8Array).toString('base64')
+    if (!googleRes.ok) {
+      const msg = data.error?.message || `Google API error ${googleRes.status}`
+      return res.status(500).json({ error: msg })
+    }
 
-    res.json({ image: `data:image/jpeg;base64,${base64}`, prompt: prompt.trim() })
+    const prediction = data.predictions?.[0]
+    if (!prediction?.bytesBase64Encoded) {
+      return res.status(500).json({ error: 'No image returned. The prompt may have been blocked by safety filters.' })
+    }
+
+    const mimeType = prediction.mimeType || 'image/png'
+    res.json({
+      image: `data:${mimeType};base64,${prediction.bytesBase64Encoded}`,
+      prompt: prompt.trim(),
+    })
   } catch (err) {
     const message = err instanceof Error ? err.message : 'Unknown error'
     console.error('Generation error:', message)
