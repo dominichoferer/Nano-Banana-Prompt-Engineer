@@ -185,7 +185,7 @@ export default function PromptDisplay({
         ) : (
           <>
             <span>✨</span>
-            Generate Image (Imagen 3 / Gemini)
+            Generate Image (Gemini 3 Pro)
           </>
         )}
       </button>

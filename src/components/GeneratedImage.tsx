@@ -39,7 +39,7 @@ export default function GeneratedImage({ imageDataUrl, status, error, prompt, ac
             <div>
               <p className="text-dark-400 text-sm font-medium">No image yet</p>
               <p className="text-dark-500 text-xs mt-1">
-                Generate a prompt first, then click<br />"Generate Image with Imagen 3"
+                Generate a prompt first, then click<br />"Generate Image (Gemini 3 Pro)"
               </p>
             </div>
           </div>
@@ -57,7 +57,7 @@ export default function GeneratedImage({ imageDataUrl, status, error, prompt, ac
               <div className="absolute inset-0 flex items-center justify-center text-2xl">🍌</div>
             </div>
             <div className="text-center">
-              <p className="text-white font-semibold">Generating with Imagen 3…</p>
+              <p className="text-white font-semibold">Generating with Gemini 3 Pro…</p>
               <p className="text-dark-400 text-sm mt-1">This may take 10–30 seconds</p>
             </div>
             {/* Animated dots */}

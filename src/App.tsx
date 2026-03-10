@@ -126,7 +126,7 @@ export default function App() {
                 Nano Banana
                 <span className="text-banana-500 ml-1.5">Prompt Engineer</span>
               </h1>
-              <p className="text-dark-400 text-xs">Claude Vision × Google Imagen 3</p>
+              <p className="text-dark-400 text-xs">Claude Vision × Gemini 3 Pro</p>
             </div>
           </div>
 
@@ -159,7 +159,7 @@ export default function App() {
                 generationStatus === 'generating' ? 'bg-banana-500 animate-pulse' :
                 generationStatus === 'done' ? 'bg-green-500' : 'bg-[#3a3a3a]'
               }`} />
-              Imagen 3 Generation
+              Gemini 3 Pro Generation
             </span>
           </div>
         </div>
@@ -295,8 +295,8 @@ export default function App() {
             },
             {
               icon: '🎨',
-              title: 'Imagen 3 Generates',
-              desc: 'Google\'s Imagen 3 uses the precision-crafted prompt to generate a new image that matches your reference exactly.',
+              title: 'Gemini 3 Pro Generates',
+              desc: 'Google\'s Gemini 3 Pro Image Preview uses the precision-crafted prompt to generate a new image that matches your reference exactly.',
             },
           ].map((step) => (
             <div
@@ -320,7 +320,7 @@ export default function App() {
             🍌 Nano Banana Prompt Engineer
           </p>
           <p className="text-dark-600 text-xs">
-            Powered by Claude claude-opus-4-6 Vision + Google Imagen 3
+            Powered by Claude claude-opus-4-6 Vision + Gemini 3 Pro Image
           </p>
         </div>
       </footer>
