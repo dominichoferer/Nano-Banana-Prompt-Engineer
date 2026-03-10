@@ -119,7 +119,12 @@ app.post('/api/generate', async (req: Request, res: Response) => {
       return res.status(500).json({ error: 'GOOGLE_AI_API_KEY not configured' })
     }
 
-    const client = new GoogleGenAI({ apiKey: process.env.GOOGLE_AI_API_KEY })
+    // httpOptions.apiVersion must be 'v1' — imagen-3.0-generate-002 is not
+    // available on the default v1beta endpoint used by this SDK version
+    const client = new GoogleGenAI({
+      apiKey: process.env.GOOGLE_AI_API_KEY,
+      httpOptions: { apiVersion: 'v1' },
+    })
 
     const response = await client.models.generateImages({
       model: 'imagen-3.0-generate-002',

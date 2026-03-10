@@ -18,7 +18,11 @@ export async function generateImage(req: Request, res: Response) {
       return res.status(500).json({ error: 'GOOGLE_AI_API_KEY not configured on server' })
     }
 
-    const client = new GoogleGenAI({ apiKey: process.env.GOOGLE_AI_API_KEY })
+    // httpOptions.apiVersion must be 'v1' — imagen-3.0-generate-002 is GA (not beta)
+    const client = new GoogleGenAI({
+      apiKey: process.env.GOOGLE_AI_API_KEY,
+      httpOptions: { apiVersion: 'v1' },
+    })
 
     const response = await client.models.generateImages({
       model: 'imagen-3.0-generate-002',
