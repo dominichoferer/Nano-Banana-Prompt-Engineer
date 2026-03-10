@@ -105,15 +105,12 @@ app.post('/api/analyze', upload.array('images', 10), async (req: Request, res: R
   }
 })
 
-// ── Generate Image: Imagen 3 → Gemini 2.0 Flash fallback ──────────────────
+// ── Image Generation — priority chain ─────────────────────────────────────
+// 1. gemini-3-pro-image-preview        ← primary (Nano Banana Pro model)
+// 2. imagen-3.0-generate-002           ← fallback
+// 3. gemini-2.0-flash-preview-image-generation  ← universal fallback
 //
-// Imagen 3 (imagen-3.0-generate-002) is the highest quality model but
-// requires explicit API access (waitlist for some accounts).
-//
-// Gemini 2.0 Flash Image Generation works with any standard AI Studio key
-// and is used as automatic fallback.
-//
-// Get your free API key at: https://aistudio.google.com/app/apikey
+// API key from: https://aistudio.google.com/app/apikey
 
 interface PredictResponse {
   predictions?: Array<{ bytesBase64Encoded?: string; mimeType?: string }>
@@ -132,7 +129,32 @@ interface GeminiResponse {
   error?: { message: string; code: number }
 }
 
-async function tryImagen3(prompt: string, aspectRatio: string, apiKey: string) {
+type ImageResult = { base64: string; mimeType: string; model: string }
+
+async function callGeminiGenerateContent(
+  model: string,
+  prompt: string,
+  apiKey: string,
+  label: string,
+): Promise<ImageResult> {
+  const url = `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent?key=${apiKey}`
+  const res = await fetch(url, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({
+      contents: [{ parts: [{ text: prompt }] }],
+      generationConfig: { responseModalities: ['IMAGE', 'TEXT'] },
+    }),
+  })
+  const data = await res.json() as GeminiResponse
+  if (!res.ok) throw new Error(data.error?.message || `${label} error ${res.status}`)
+  const parts = data.candidates?.[0]?.content?.parts ?? []
+  const img = parts.find((p) => p.inlineData?.mimeType?.startsWith('image/'))
+  if (!img?.inlineData) throw new Error(`No image returned from ${label}`)
+  return { base64: img.inlineData.data, mimeType: img.inlineData.mimeType, model: label }
+}
+
+async function callImagen3(prompt: string, aspectRatio: string, apiKey: string): Promise<ImageResult> {
   const url = `https://generativelanguage.googleapis.com/v1beta/models/imagen-3.0-generate-002:predict?key=${apiKey}`
   const res = await fetch(url, {
     method: 'POST',
@@ -142,47 +164,11 @@ async function tryImagen3(prompt: string, aspectRatio: string, apiKey: string) {
       parameters: { sampleCount: 1, aspectRatio },
     }),
   })
-
   const data = await res.json() as PredictResponse
-  if (!res.ok) {
-    throw new Error(data.error?.message || `Imagen 3 error ${res.status}`)
-  }
-
-  const prediction = data.predictions?.[0]
-  if (!prediction?.bytesBase64Encoded) throw new Error('No image from Imagen 3')
-
-  return {
-    base64: prediction.bytesBase64Encoded,
-    mimeType: prediction.mimeType || 'image/png',
-    model: 'Imagen 3',
-  }
-}
-
-async function tryGeminiFlash(prompt: string, apiKey: string) {
-  const url = `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash-preview-image-generation:generateContent?key=${apiKey}`
-  const res = await fetch(url, {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({
-      contents: [{ parts: [{ text: prompt }] }],
-      generationConfig: { responseModalities: ['IMAGE', 'TEXT'] },
-    }),
-  })
-
-  const data = await res.json() as GeminiResponse
-  if (!res.ok) {
-    throw new Error(data.error?.message || `Gemini error ${res.status}`)
-  }
-
-  const parts = data.candidates?.[0]?.content?.parts ?? []
-  const imagePart = parts.find((p) => p.inlineData?.mimeType?.startsWith('image/'))
-  if (!imagePart?.inlineData) throw new Error('No image from Gemini Flash')
-
-  return {
-    base64: imagePart.inlineData.data,
-    mimeType: imagePart.inlineData.mimeType,
-    model: 'Gemini 2.0 Flash',
-  }
+  if (!res.ok) throw new Error(data.error?.message || `Imagen 3 error ${res.status}`)
+  const pred = data.predictions?.[0]
+  if (!pred?.bytesBase64Encoded) throw new Error('No image from Imagen 3')
+  return { base64: pred.bytesBase64Encoded, mimeType: pred.mimeType || 'image/png', model: 'Imagen 3' }
 }
 
 app.post('/api/generate', async (req: Request, res: Response) => {
@@ -197,22 +183,35 @@ app.post('/api/generate', async (req: Request, res: Response) => {
     }
 
     const apiKey = process.env.GOOGLE_AI_API_KEY
-    const trimmedPrompt = prompt.trim()
+    const p = prompt.trim()
 
-    // Try Imagen 3 first (best quality), fall back to Gemini 2.0 Flash
-    let result: { base64: string; mimeType: string; model: string }
-    try {
-      result = await tryImagen3(trimmedPrompt, aspectRatio, apiKey)
-      console.log('Generated with Imagen 3')
-    } catch (imagen3Err) {
-      console.warn('Imagen 3 unavailable, falling back to Gemini 2.0 Flash:', imagen3Err instanceof Error ? imagen3Err.message : imagen3Err)
-      result = await tryGeminiFlash(trimmedPrompt, apiKey)
-      console.log('Generated with Gemini 2.0 Flash')
+    const attempts: Array<() => Promise<ImageResult>> = [
+      () => callGeminiGenerateContent('gemini-3-pro-image-preview', p, apiKey, 'Gemini 3 Pro'),
+      () => callImagen3(p, aspectRatio, apiKey),
+      () => callGeminiGenerateContent('gemini-2.0-flash-preview-image-generation', p, apiKey, 'Gemini 2.0 Flash'),
+    ]
+
+    let result: ImageResult | null = null
+    let lastError = ''
+
+    for (const attempt of attempts) {
+      try {
+        result = await attempt()
+        console.log(`Generated with ${result.model}`)
+        break
+      } catch (e) {
+        lastError = e instanceof Error ? e.message : String(e)
+        console.warn(`Attempt failed: ${lastError}`)
+      }
+    }
+
+    if (!result) {
+      return res.status(500).json({ error: `All image models failed. Last error: ${lastError}` })
     }
 
     res.json({
       image: `data:${result.mimeType};base64,${result.base64}`,
-      prompt: trimmedPrompt,
+      prompt: p,
       model: result.model,
     })
   } catch (err) {
