@@ -133,10 +133,7 @@ interface GeminiResponse {
   error?: { message: string; code: number }
 }
 
-// Ratios natively supported by Gemini imageGenerationConfig
-const SUPPORTED_API_RATIOS = new Set(['1:1', '16:9', '9:16', '4:3', '3:4'])
-
-// Resolution quality hints for prompt enrichment
+// Resolution quality hints appended to the prompt
 const RESOLUTION_HINTS: Record<string, string> = {
   '1K': 'high quality',
   '2K': 'ultra high quality, 2K resolution',
@@ -145,10 +142,11 @@ const RESOLUTION_HINTS: Record<string, string> = {
 
 app.post('/api/generate', async (req: Request, res: Response) => {
   try {
-    const { prompt, aspectRatio, resolution } = req.body as {
+    const { prompt, aspectRatio, resolution, referenceImage } = req.body as {
       prompt: string
       aspectRatio?: string
       resolution?: string
+      referenceImage?: { data: string; mimeType: string }
     }
 
     if (!prompt?.trim()) {
@@ -160,36 +158,53 @@ app.post('/api/generate', async (req: Request, res: Response) => {
 
     const apiKey = process.env.GOOGLE_AI_API_KEY
 
-    // Enrich prompt with resolution and unsupported aspect ratio hints
-    const resHint = resolution ? RESOLUTION_HINTS[resolution] : null
-    const nativeRatio = aspectRatio && SUPPORTED_API_RATIOS.has(aspectRatio)
-    const ratioHint = aspectRatio && !nativeRatio ? `${aspectRatio} aspect ratio` : null
+    // Build enriched prompt with aspect ratio + resolution hints
+    const hints: string[] = []
+    if (aspectRatio) hints.push(`${aspectRatio} aspect ratio`)
+    if (resolution && RESOLUTION_HINTS[resolution]) hints.push(RESOLUTION_HINTS[resolution])
+    const p = hints.length ? `${prompt.trim()}, ${hints.join(', ')}` : prompt.trim()
 
-    const extras = [ratioHint, resHint].filter(Boolean).join(', ')
-    const p = extras ? `${prompt.trim()}, ${extras}` : prompt.trim()
+    // Build Gemini content parts
+    // If a reference image is provided, send it first so Gemini uses it as visual anchor
+    type Part = { text: string } | { inlineData: { mimeType: string; data: string } }
+    const parts: Part[] = []
 
-    // Build imageGenerationConfig only with supported parameters
-    const imageGenerationConfig: Record<string, string> = {}
-    if (nativeRatio && aspectRatio) imageGenerationConfig.aspectRatio = aspectRatio
+    if (referenceImage?.data) {
+      parts.push({ inlineData: { mimeType: referenceImage.mimeType, data: referenceImage.data } })
+      parts.push({
+        text: `Generate a NEW image that strictly adopts the visual identity and style of the reference image above (lighting, color palette, art style, mood, rendering quality, composition). Apply this visual style to create: ${p}`,
+      })
+    } else {
+      parts.push({ text: p })
+    }
 
     const url = `https://generativelanguage.googleapis.com/v1beta/models/gemini-3-pro-image-preview:generateContent?key=${apiKey}`
     const fetchRes = await fetch(url, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({
-        contents: [{ parts: [{ text: p }] }],
-        generationConfig: {
-          responseModalities: ['IMAGE', 'TEXT'],
-          ...(Object.keys(imageGenerationConfig).length > 0 ? { imageGenerationConfig } : {}),
-        },
+        contents: [{ parts }],
+        generationConfig: { responseModalities: ['IMAGE', 'TEXT'] },
       }),
     })
 
-    const data = await fetchRes.json() as GeminiResponse
-    if (!fetchRes.ok) throw new Error(data.error?.message || `Gemini 3 Pro error ${fetchRes.status}`)
+    // Robust response parsing — Gemini sometimes returns HTML on errors
+    const responseText = await fetchRes.text()
+    let data: GeminiResponse
+    try {
+      data = JSON.parse(responseText) as GeminiResponse
+    } catch {
+      throw new Error(
+        `Gemini API returned an unexpected response (HTTP ${fetchRes.status}): ${responseText.slice(0, 300)}`,
+      )
+    }
 
-    const parts = data.candidates?.[0]?.content?.parts ?? []
-    const img = parts.find((part) => part.inlineData?.mimeType?.startsWith('image/'))
+    if (!fetchRes.ok) {
+      throw new Error(data.error?.message || `Gemini 3 Pro error ${fetchRes.status}`)
+    }
+
+    const responseParts = data.candidates?.[0]?.content?.parts ?? []
+    const img = responseParts.find((part) => part.inlineData?.mimeType?.startsWith('image/'))
     if (!img?.inlineData) throw new Error('No image returned from Gemini 3 Pro')
 
     res.json({

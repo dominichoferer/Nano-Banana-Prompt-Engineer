@@ -85,7 +85,7 @@ export default function App() {
     }
   }, [images])
 
-  // ── Generate Image with Google Imagen ─────────────────────────────────────
+  // ── Generate Image with Gemini 3 Pro ──────────────────────────────────────
   const handleGenerate = useCallback(async () => {
     if (!prompt.trim()) return
 
@@ -94,10 +94,30 @@ export default function App() {
     setGeneratedImage(null)
 
     try {
+      // Include first reference image (≤ 2 MB) so Gemini can use it as visual anchor
+      let referenceImage: { data: string; mimeType: string } | undefined
+      if (images.length > 0 && images[0].file.size <= 2 * 1024 * 1024) {
+        referenceImage = await new Promise((resolve, reject) => {
+          const reader = new FileReader()
+          reader.onload = () =>
+            resolve({
+              data: (reader.result as string).split(',')[1],
+              mimeType: images[0].file.type,
+            })
+          reader.onerror = reject
+          reader.readAsDataURL(images[0].file)
+        })
+      }
+
       const response = await fetch('/api/generate', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ prompt: prompt.trim(), aspectRatio, resolution }),
+        body: JSON.stringify({
+          prompt: prompt.trim(),
+          aspectRatio,
+          resolution,
+          ...(referenceImage ? { referenceImage } : {}),
+        }),
       })
 
       if (!response.ok) {
@@ -114,7 +134,7 @@ export default function App() {
       setGenerationError(message)
       setGenerationStatus('error')
     }
-  }, [prompt, aspectRatio, resolution])
+  }, [prompt, aspectRatio, resolution, images])
 
   const canAnalyze = images.length > 0 && analysisStatus !== 'analyzing'
 
