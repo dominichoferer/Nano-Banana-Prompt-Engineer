@@ -36,14 +36,28 @@ When analyzing images, you extract and describe:
 
 Output format: A single, flowing, optimized prompt using comma-separated descriptive phrases. Start with the most important subject, then style, then technical details. Include quality boosters at the end. Do NOT include explanatory text or labels — just the pure prompt.`
 
-const USER_TEMPLATE = (count: number) =>
-  count === 1
-    ? `Analyze this reference image and generate the ultimate AI image generation prompt that would recreate it exactly. Be exhaustively detailed — capture every visual nuance, style element, lighting condition, and compositional choice.`
-    : `Analyze these ${count} reference images and generate the ultimate AI image generation prompt. Identify the dominant visual style, composition principles, color palette, lighting setup, and key aesthetic elements consistent across all images.`
+const USER_TEMPLATE = (count: number, userDescription?: string) => {
+  if (userDescription) {
+    const plural = count > 1 ? `these ${count} reference images` : 'this reference image'
+    return `Analyze ${plural} and extract its complete VISUAL IDENTITY: art style, color palette, lighting setup, mood, composition rules, texture quality, rendering technique, and any distinctive aesthetic elements.
+
+Then, using that exact visual identity as the style foundation, create the ultimate AI image generation prompt for the following subject:
+"${userDescription}"
+
+The prompt must faithfully preserve all visual characteristics from the reference (lighting, color grading, style, mood, rendering quality) while generating the new subject. Make it clear in the prompt what visual style is being applied.
+
+Output only the final prompt — no explanations, no labels, just the optimized comma-separated prompt.`
+  }
+  return count === 1
+    ? `Analyze this reference image and generate the ultimate AI image generation prompt that would recreate it exactly. Be exhaustively detailed — capture every visual nuance, style element, lighting condition, and compositional choice. The prompt should be so precise that the generated image is virtually identical to the reference.`
+    : `Analyze these ${count} reference images and generate the ultimate AI image generation prompt. Identify the dominant visual style, composition principles, color palette, lighting setup, and key aesthetic elements that are consistent across all images. Create a unified prompt that captures the essence and style of this image collection.`
+}
 
 app.post('/api/analyze', upload.array('images', 10), async (req: Request, res: Response) => {
   try {
     const files = req.files as Express.Multer.File[]
+    const userDescription = req.body?.userDescription as string | undefined
+
     if (!files || files.length === 0) {
       return res.status(400).json({ error: 'No images provided' })
     }
@@ -78,7 +92,7 @@ app.post('/api/analyze', upload.array('images', 10), async (req: Request, res: R
           role: 'user',
           content: [
             ...imageContent,
-            { type: 'text', text: USER_TEMPLATE(files.length) },
+            { type: 'text', text: USER_TEMPLATE(files.length, userDescription) },
           ],
         },
       ],
@@ -105,12 +119,7 @@ app.post('/api/analyze', upload.array('images', 10), async (req: Request, res: R
   }
 })
 
-// ── Image Generation — priority chain ─────────────────────────────────────
-// 1. gemini-3-pro-image-preview        ← primary (Nano Banana Pro model)
-// 2. imagen-3.0-generate-002           ← fallback
-// 3. gemini-2.0-flash-preview-image-generation  ← universal fallback
-//
-// API key from: https://aistudio.google.com/app/apikey
+// ── Image Generation — Gemini 3 Pro ────────────────────────────────────────
 
 interface GeminiResponse {
   candidates?: Array<{
@@ -124,35 +133,23 @@ interface GeminiResponse {
   error?: { message: string; code: number }
 }
 
-type ImageResult = { base64: string; mimeType: string; model: string }
+// Ratios natively supported by Gemini imageGenerationConfig
+const SUPPORTED_API_RATIOS = new Set(['1:1', '16:9', '9:16', '4:3', '3:4'])
 
-async function callGeminiGenerateContent(
-  model: string,
-  prompt: string,
-  apiKey: string,
-  label: string,
-): Promise<ImageResult> {
-  const url = `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent?key=${apiKey}`
-  const res = await fetch(url, {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({
-      contents: [{ parts: [{ text: prompt }] }],
-      generationConfig: { responseModalities: ['IMAGE', 'TEXT'] },
-    }),
-  })
-  const data = await res.json() as GeminiResponse
-  if (!res.ok) throw new Error(data.error?.message || `${label} error ${res.status}`)
-  const parts = data.candidates?.[0]?.content?.parts ?? []
-  const img = parts.find((p) => p.inlineData?.mimeType?.startsWith('image/'))
-  if (!img?.inlineData) throw new Error(`No image returned from ${label}`)
-  return { base64: img.inlineData.data, mimeType: img.inlineData.mimeType, model: label }
+// Resolution quality hints for prompt enrichment
+const RESOLUTION_HINTS: Record<string, string> = {
+  '1K': 'high quality',
+  '2K': 'ultra high quality, 2K resolution',
+  '4K': 'ultra HD, 4K, hyper-detailed, maximum quality, ultra sharp, high resolution',
 }
-
 
 app.post('/api/generate', async (req: Request, res: Response) => {
   try {
-    const { prompt } = req.body as { prompt: string }
+    const { prompt, aspectRatio, resolution } = req.body as {
+      prompt: string
+      aspectRatio?: string
+      resolution?: string
+    }
 
     if (!prompt?.trim()) {
       return res.status(400).json({ error: 'Prompt is required' })
@@ -162,14 +159,43 @@ app.post('/api/generate', async (req: Request, res: Response) => {
     }
 
     const apiKey = process.env.GOOGLE_AI_API_KEY
-    const p = prompt.trim()
 
-    const result = await callGeminiGenerateContent('gemini-3-pro-image-preview', p, apiKey, 'Gemini 3 Pro')
+    // Enrich prompt with resolution and unsupported aspect ratio hints
+    const resHint = resolution ? RESOLUTION_HINTS[resolution] : null
+    const nativeRatio = aspectRatio && SUPPORTED_API_RATIOS.has(aspectRatio)
+    const ratioHint = aspectRatio && !nativeRatio ? `${aspectRatio} aspect ratio` : null
+
+    const extras = [ratioHint, resHint].filter(Boolean).join(', ')
+    const p = extras ? `${prompt.trim()}, ${extras}` : prompt.trim()
+
+    // Build imageGenerationConfig only with supported parameters
+    const imageGenerationConfig: Record<string, string> = {}
+    if (nativeRatio && aspectRatio) imageGenerationConfig.aspectRatio = aspectRatio
+
+    const url = `https://generativelanguage.googleapis.com/v1beta/models/gemini-3-pro-image-preview:generateContent?key=${apiKey}`
+    const fetchRes = await fetch(url, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        contents: [{ parts: [{ text: p }] }],
+        generationConfig: {
+          responseModalities: ['IMAGE', 'TEXT'],
+          ...(Object.keys(imageGenerationConfig).length > 0 ? { imageGenerationConfig } : {}),
+        },
+      }),
+    })
+
+    const data = await fetchRes.json() as GeminiResponse
+    if (!fetchRes.ok) throw new Error(data.error?.message || `Gemini 3 Pro error ${fetchRes.status}`)
+
+    const parts = data.candidates?.[0]?.content?.parts ?? []
+    const img = parts.find((part) => part.inlineData?.mimeType?.startsWith('image/'))
+    if (!img?.inlineData) throw new Error('No image returned from Gemini 3 Pro')
 
     res.json({
-      image: `data:${result.mimeType};base64,${result.base64}`,
+      image: `data:${img.inlineData.mimeType};base64,${img.inlineData.data}`,
       prompt: p,
-      model: result.model,
+      model: 'Gemini 3 Pro',
     })
   } catch (err) {
     const message = err instanceof Error ? err.message : 'Unknown error'
