@@ -5,9 +5,10 @@ interface Props {
   status: GenerationStatus
   error: string | null
   prompt: string
+  activeModel?: string
 }
 
-export default function GeneratedImage({ imageDataUrl, status, error, prompt }: Props) {
+export default function GeneratedImage({ imageDataUrl, status, error, prompt, activeModel }: Props) {
   const downloadImage = () => {
     if (!imageDataUrl) return
     const a = document.createElement('a')
@@ -126,7 +127,9 @@ export default function GeneratedImage({ imageDataUrl, status, error, prompt }: 
         <div className="flex items-center gap-2 animate-slide-up">
           <div className="flex items-center gap-2 flex-1 bg-[#141414] border border-[#2a2a2a] rounded-xl px-3 py-2">
             <div className="w-2 h-2 rounded-full bg-green-500" />
-            <span className="text-green-400 text-xs font-medium">Image generated successfully</span>
+            <span className="text-green-400 text-xs font-medium">
+              Generated{activeModel ? ` with ${activeModel}` : ' successfully'}
+            </span>
           </div>
           <button
             onClick={downloadImage}

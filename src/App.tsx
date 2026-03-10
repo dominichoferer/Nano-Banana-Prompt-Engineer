@@ -19,6 +19,7 @@ export default function App() {
   const [generationStatus, setGenerationStatus] = useState<GenerationStatus>('idle')
   const [generationError, setGenerationError] = useState<string | null>(null)
   const [generatedImage, setGeneratedImage] = useState<string | null>(null)
+  const [activeModel, setActiveModel] = useState<string | undefined>(undefined)
 
   // ── Analyze Images with Claude Vision ─────────────────────────────────────
   const handleAnalyze = useCallback(async () => {
@@ -102,6 +103,7 @@ export default function App() {
 
       const data = (await response.json()) as GenerateResponse
       setGeneratedImage(data.image)
+      setActiveModel(data.model)
       setGenerationStatus('done')
     } catch (err) {
       const message = err instanceof Error ? err.message : 'Generation failed'
@@ -273,6 +275,7 @@ export default function App() {
               status={generationStatus}
               error={generationError}
               prompt={prompt}
+              activeModel={activeModel}
             />
           </div>
         </div>
