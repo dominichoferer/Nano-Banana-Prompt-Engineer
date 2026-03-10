@@ -112,11 +112,6 @@ app.post('/api/analyze', upload.array('images', 10), async (req: Request, res: R
 //
 // API key from: https://aistudio.google.com/app/apikey
 
-interface PredictResponse {
-  predictions?: Array<{ bytesBase64Encoded?: string; mimeType?: string }>
-  error?: { message: string; code: number; status: string }
-}
-
 interface GeminiResponse {
   candidates?: Array<{
     content?: {
@@ -154,26 +149,10 @@ async function callGeminiGenerateContent(
   return { base64: img.inlineData.data, mimeType: img.inlineData.mimeType, model: label }
 }
 
-async function callImagen3(prompt: string, aspectRatio: string, apiKey: string): Promise<ImageResult> {
-  const url = `https://generativelanguage.googleapis.com/v1beta/models/imagen-3.0-generate-002:predict?key=${apiKey}`
-  const res = await fetch(url, {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({
-      instances: [{ prompt }],
-      parameters: { sampleCount: 1, aspectRatio },
-    }),
-  })
-  const data = await res.json() as PredictResponse
-  if (!res.ok) throw new Error(data.error?.message || `Imagen 3 error ${res.status}`)
-  const pred = data.predictions?.[0]
-  if (!pred?.bytesBase64Encoded) throw new Error('No image from Imagen 3')
-  return { base64: pred.bytesBase64Encoded, mimeType: pred.mimeType || 'image/png', model: 'Imagen 3' }
-}
 
 app.post('/api/generate', async (req: Request, res: Response) => {
   try {
-    const { prompt, aspectRatio = '1:1' } = req.body as { prompt: string; aspectRatio?: string }
+    const { prompt } = req.body as { prompt: string }
 
     if (!prompt?.trim()) {
       return res.status(400).json({ error: 'Prompt is required' })
@@ -185,29 +164,7 @@ app.post('/api/generate', async (req: Request, res: Response) => {
     const apiKey = process.env.GOOGLE_AI_API_KEY
     const p = prompt.trim()
 
-    const attempts: Array<() => Promise<ImageResult>> = [
-      () => callGeminiGenerateContent('gemini-3-pro-image-preview', p, apiKey, 'Gemini 3 Pro'),
-      () => callImagen3(p, aspectRatio, apiKey),
-      () => callGeminiGenerateContent('gemini-2.0-flash-preview-image-generation', p, apiKey, 'Gemini 2.0 Flash'),
-    ]
-
-    let result: ImageResult | null = null
-    let lastError = ''
-
-    for (const attempt of attempts) {
-      try {
-        result = await attempt()
-        console.log(`Generated with ${result.model}`)
-        break
-      } catch (e) {
-        lastError = e instanceof Error ? e.message : String(e)
-        console.warn(`Attempt failed: ${lastError}`)
-      }
-    }
-
-    if (!result) {
-      return res.status(500).json({ error: `All image models failed. Last error: ${lastError}` })
-    }
+    const result = await callGeminiGenerateContent('gemini-3-pro-image-preview', p, apiKey, 'Gemini 3 Pro')
 
     res.json({
       image: `data:${result.mimeType};base64,${result.base64}`,
