@@ -1,7 +1,8 @@
 import { useState, useCallback } from 'react'
 import ImageUploader from './components/ImageUploader'
 import PromptDisplay from './components/PromptDisplay'
-import type { UploadedImage, AnalysisStatus, PromptMode } from './types'
+import type { UploadedImage, AnalysisStatus, PromptMode, FocusArea } from './types'
+import { FOCUS_AREAS } from './types'
 
 // Compress image to max 1600px longest side, JPEG 85% — keeps payload under Vercel's 4.5MB limit
 function compressImage(file: File): Promise<File> {
@@ -34,6 +35,7 @@ export default function App() {
   const [images, setImages] = useState<UploadedImage[]>([])
   const [userDescription, setUserDescription] = useState('')
   const [promptMode, setPromptMode] = useState<PromptMode>('retouch')
+  const [focusAreas, setFocusAreas] = useState<FocusArea[]>([])
   const [prompt, setPrompt] = useState('')
   const [analysisStatus, setAnalysisStatus] = useState<AnalysisStatus>('idle')
   const [analysisError, setAnalysisError] = useState<string | null>(null)
@@ -52,6 +54,7 @@ export default function App() {
       compressed.forEach((file) => formData.append('images', file))
       if (userDescription.trim()) formData.append('userDescription', userDescription.trim())
       formData.append('promptMode', promptMode)
+      if (focusAreas.length > 0) formData.append('focusAreas', focusAreas.join(','))
 
       const response = await fetch('/api/analyze', {
         method: 'POST',
@@ -98,7 +101,13 @@ export default function App() {
       setAnalysisError(message)
       setAnalysisStatus('error')
     }
-  }, [images, userDescription, promptMode])
+  }, [images, userDescription, promptMode, focusAreas])
+
+  const toggleFocus = useCallback((area: FocusArea) => {
+    setFocusAreas((prev) =>
+      prev.includes(area) ? prev.filter((a) => a !== area) : [...prev, area],
+    )
+  }, [])
 
   const canAnalyze = images.length > 0 && analysisStatus !== 'analyzing'
 
@@ -218,6 +227,50 @@ export default function App() {
                 </div>
                 <div className="w-8 h-8 rounded-xl bg-banana-500/10 border border-banana-500/20 flex items-center justify-center text-sm font-bold text-banana-500">
                   2
+                </div>
+              </div>
+
+              {/* Focus Area Toggles */}
+              <div className="flex flex-col gap-2">
+                <div className="flex items-center justify-between">
+                  <span className="text-dark-400 text-xs">
+                    Focus areas
+                    <span className="text-dark-600 ml-1">
+                      {focusAreas.length === 0 ? '— all sections' : `— ${focusAreas.length} selected`}
+                    </span>
+                  </span>
+                  {focusAreas.length > 0 && (
+                    <button
+                      onClick={() => setFocusAreas([])}
+                      className="text-dark-500 hover:text-dark-300 text-xs transition-colors"
+                    >
+                      clear
+                    </button>
+                  )}
+                </div>
+                <div className="flex flex-wrap gap-1.5">
+                  {FOCUS_AREAS.map((area) => {
+                    const active = focusAreas.includes(area.id)
+                    return (
+                      <button
+                        key={area.id}
+                        onClick={() => toggleFocus(area.id)}
+                        disabled={analysisStatus === 'analyzing'}
+                        className={`
+                          flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg border text-xs font-medium
+                          transition-all duration-150 select-none
+                          ${active
+                            ? 'border-banana-500 bg-banana-500/15 text-banana-300'
+                            : 'border-[#2a2a2a] text-dark-400 hover:border-[#3a3a3a] hover:text-dark-300'
+                          }
+                          disabled:opacity-40 disabled:cursor-not-allowed
+                        `}
+                      >
+                        <span className="text-sm leading-none">{area.icon}</span>
+                        {area.label}
+                      </button>
+                    )
+                  })}
                 </div>
               </div>
 

@@ -95,7 +95,22 @@ WRITING STYLE RULES
 
 // ── User template ───────────────────────────────────────────────────────────
 
-function buildUserMessage(count: number, userDescription?: string, promptMode?: string): string {
+const FOCUS_SECTION_MAP: Record<string, string> = {
+  face:       'FACE LOCK section — pixel-perfect facial feature preservation for every person',
+  pose:       'POSE & POSITIONING section — body alignment, spacing, angles, expressions',
+  lighting:   'LIGHTING section — camera specs, key/fill/rim lights, catchlights',
+  color:      'COLOR GRADING section — tone, shadows, whites, contrast, publication references',
+  skin:       'SKIN RETOUCHING — technique, frequency separation, output finish',
+  background: 'BACKGROUND section — exact replacement or enhancement description',
+  clothing:   'SUBJECT & CLOTHING section — every clothing item, color, material, accessories',
+}
+
+function buildUserMessage(
+  count: number,
+  userDescription?: string,
+  promptMode?: string,
+  focusAreas?: string[],
+): string {
   const isRetouch = promptMode !== 'generation'
   const modeLabel = isRetouch ? 'PHOTO RETOUCH' : 'NEW GENERATION'
   const imageRef = count > 1 ? `these ${count} reference images` : 'this reference image'
@@ -104,17 +119,39 @@ function buildUserMessage(count: number, userDescription?: string, promptMode?: 
     ? `\n\nUSER'S REQUESTED CHANGES / INTENT:\n"${userDescription}"\n\nAnalyze the reference image, then incorporate these changes into the structured prompt. Preserve everything from the reference that is NOT explicitly changed.`
     : `\n\nGenerate a prompt to ${isRetouch ? 'perfectly retouch and enhance this image' : 'create a new image inspired by the visual style and composition of this reference'}.`
 
-  return `Analyze ${imageRef} in extreme detail for a ${modeLabel} job.${changeBlock}
+  const hasFocus = focusAreas && focusAreas.length > 0
+  const focusBlock = hasFocus
+    ? `\n\n⚡ FOCUS MODE — Only generate the following sections (keep the prompt concise and targeted):\n${focusAreas!.map((f) => `— ${FOCUS_SECTION_MAP[f] ?? f}`).join('\n')}\nAlways include the header line and OUTPUT SPECS. Omit all other sections entirely.`
+    : ''
+
+  const checklistItems = hasFocus
+    ? focusAreas!.map((f) => {
+        const checks: Record<string, string> = {
+          face:       'Facial features of every person (shape, color, texture, hair)',
+          pose:       'Body alignment, spacing, posture, angles, expressions',
+          lighting:   'Lighting quality, direction, shadows, catchlights',
+          color:      'Color grading, tone, warmth/coolness, contrast',
+          skin:       'Skin texture, retouching needs',
+          background: 'Background content and required changes',
+          clothing:   'All clothing items, colors, materials, accessories',
+        }
+        return checks[f] ?? f
+      })
+    : [
+        'Count and position every person present',
+        'For each person: complete facial feature description, hair, skin tone, every clothing item with exact colors and materials, accessories, footwear',
+        'Current pose: body alignment, spacing between subjects, posture quality, angles, hand/arm positions, expressions',
+        'Current lighting: quality, direction, shadows, catchlights present',
+        'Current background: what it is, what it should become',
+        'Current color grading: tone, warmth/coolness, contrast',
+      ]
+
+  return `Analyze ${imageRef} in extreme detail for a ${modeLabel} job.${changeBlock}${focusBlock}
 
 ANALYSIS CHECKLIST — extract all of these from the reference image:
-— Count and position every person present
-— For each person: complete facial feature description, hair, skin tone, every clothing item with exact colors and materials, accessories, footwear
-— Current pose: body alignment, spacing between subjects, posture quality, angles, hand/arm positions, expressions
-— Current lighting: quality, direction, shadows, catchlights present
-— Current background: what it is, what it should become
-— Current color grading: tone, warmth/coolness, contrast
+${checklistItems.map((i) => `— ${i}`).join('\n')}
 
-OUTPUT: Generate the complete structured prompt NOW, following the format from your system instructions exactly. Start directly with the header line — no preamble.`
+OUTPUT: Generate the ${hasFocus ? 'focused, concise' : 'complete'} structured prompt NOW, following the format from your system instructions. Start directly with the header line — no preamble.`
 }
 
 // ── Analyze endpoint ────────────────────────────────────────────────────────
@@ -124,6 +161,8 @@ app.post('/api/analyze', upload.array('images', 10), async (req: Request, res: R
     const files = req.files as Express.Multer.File[]
     const userDescription = req.body?.userDescription as string | undefined
     const promptMode = req.body?.promptMode as string | undefined
+    const focusAreasRaw = req.body?.focusAreas as string | undefined
+    const focusAreas = focusAreasRaw ? focusAreasRaw.split(',').filter(Boolean) : []
 
     if (!files || files.length === 0) {
       return res.status(400).json({ error: 'No images provided' })
@@ -161,7 +200,7 @@ app.post('/api/analyze', upload.array('images', 10), async (req: Request, res: R
             ...imageContent,
             {
               type: 'text',
-              text: buildUserMessage(files.length, userDescription, promptMode),
+              text: buildUserMessage(files.length, userDescription, promptMode, focusAreas),
             },
           ],
         },
