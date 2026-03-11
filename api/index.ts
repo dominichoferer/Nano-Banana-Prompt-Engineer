@@ -35,7 +35,14 @@ OUTPUT FORMAT RULES
 
 2. USE ═══════════════════════════════════════════ as section dividers (exactly this length)
 
-3. FACE LOCK SECTION (include whenever people are present in the image)
+3. SUBJECT LOCK SECTION (include when the request requires preserving a non-face subject — a body silhouette, object, or product)
+   Format:
+   📐 SUBJECT LOCK — PROPORTIONS & COMPOSITION ⚠️
+   ═══════════════════════════════════════════
+   Describe EXACTLY: overall dimensions and aspect ratio, body/object silhouette, spatial position in frame, structural features that must not change.
+   End with: "Do NOT alter the proportions, silhouette, or overall composition of the main subject."
+
+4. FACE LOCK SECTION (include whenever people are present and face preservation is required)
    Format:
    ⚠️ FACE LOCK — ABSOLUTE PRIORITY RULE ⚠️
    ═══════════════════════════════════════════
@@ -43,17 +50,17 @@ OUTPUT FORMAT RULES
    Describe EXACTLY: facial contours, eye shape/color/spacing, nose, lips, skin tone, skin texture, hair (color, highlights, texture, how it falls), age appearance, eyebrows.
    End with: "If the faces are not 100% identical to the reference, the result is wrong."
 
-4. SUBJECT DESCRIPTIONS
+5. SUBJECT DESCRIPTIONS
    For each person use: PERSON NAME or POSITION (left/right/center)
    Describe: hair, skin tone, clothing (every item with color, material, brand if visible), accessories, shoes.
    End each person's section with: "FACE UNCHANGED."
 
-5. POSE & POSITIONING SECTION
+6. POSE & POSITIONING SECTION
    Format header: ——— POSE CORRECTIONS ———
    Be numerically precise: "10 degrees", "5cm gap", "45° angle"
    Describe: spacing, body angles, posture details (spine, shoulders, chest, chin), expressions, what they're holding or doing.
 
-6. LIGHTING SECTION
+7. LIGHTING SECTION
    Format header: 📸 PERFECT PHOTOGRAPHIC LIGHTING & COLOR
    Include:
    — Camera: brand, model, lens, aperture, ISO, shutter speed
@@ -63,7 +70,7 @@ OUTPUT FORMAT RULES
    — EYE CATCHLIGHTS: description (always include this for portraits)
    — SKIN RETOUCHING: style (editorial, frequency separation, etc.)
 
-7. COLOR GRADING SECTION
+8. COLOR GRADING SECTION
    Include:
    — Overall tone
    — Whites / Shadows treatment
@@ -72,14 +79,14 @@ OUTPUT FORMAT RULES
    — Reference publications or brands (e.g. "Kinfolk Magazine", "Monocle editorial", "high-end brand campaign")
    — What to AVOID (no Instagram filters, no oversaturation, no cool blue tones, etc.)
 
-8. BACKGROUND
+9. BACKGROUND
    Describe exact background replacement or enhancement.
    Include: shadows, reflections, environment details.
 
-9. OUTPUT SPECS
+10. OUTPUT SPECS
    Resolution (8K default for retouching), quality requirements, zero-artifacts rule.
 
-10. FINAL ENFORCEMENT RULE
+11. FINAL ENFORCEMENT RULE
     One clear, strong closing rule that reinforces the most critical requirement.
 
 ═══════════════════════════════════════════
@@ -96,6 +103,7 @@ WRITING STYLE RULES
 // ── User template ───────────────────────────────────────────────────────────
 
 const FOCUS_SECTION_MAP: Record<string, string> = {
+  subject:    'SUBJECT LOCK section — preserve exact proportions, silhouette, shape and overall composition of the main subject (person, body, object or product); no morphing, resizing, or restructuring',
   face:       'FACE LOCK section — pixel-perfect facial feature preservation for every person',
   pose:       'POSE & POSITIONING section — body alignment, spacing, angles, expressions',
   lighting:   'LIGHTING section — camera specs, key/fill/rim lights, catchlights',
@@ -127,6 +135,7 @@ function buildUserMessage(
   const checklistItems = hasFocus
     ? focusAreas!.map((f) => {
         const checks: Record<string, string> = {
+          subject:    'Overall proportions, silhouette, shape and spatial composition of the main subject (body, object, product) — note exact dimensions and structure',
           face:       'Facial features of every person (shape, color, texture, hair)',
           pose:       'Body alignment, spacing, posture, angles, expressions',
           lighting:   'Lighting quality, direction, shadows, catchlights',

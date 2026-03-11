@@ -254,6 +254,7 @@ export default function App() {
                     return (
                       <button
                         key={area.id}
+                        title={area.hint}
                         onClick={() => toggleFocus(area.id)}
                         disabled={analysisStatus === 'analyzing'}
                         className={`
