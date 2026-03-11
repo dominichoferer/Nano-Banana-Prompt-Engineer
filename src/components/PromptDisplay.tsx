@@ -1,92 +1,43 @@
-import { useRef, useEffect } from 'react'
-import type { AnalysisStatus, AspectRatio, Resolution } from '../types'
+import { useRef, useEffect, useState } from 'react'
+import type { AnalysisStatus } from '../types'
 
 interface Props {
   prompt: string
   onChange: (value: string) => void
   status: AnalysisStatus
-  aspectRatio: AspectRatio
-  onAspectRatioChange: (ratio: AspectRatio) => void
-  resolution: Resolution
-  onResolutionChange: (res: Resolution) => void
-  onGenerate: () => void
-  isGenerating: boolean
 }
 
-const ASPECT_RATIOS: { value: AspectRatio; label: string; icon: string }[] = [
-  { value: '1:1',  label: '1:1',  icon: '⬜' },
-  { value: '16:9', label: '16:9', icon: '🖥️' },
-  { value: '9:16', label: '9:16', icon: '📱' },
-  { value: '4:3',  label: '4:3',  icon: '📺' },
-  { value: '3:4',  label: '3:4',  icon: '📄' },
-  { value: '2:3',  label: '2:3',  icon: '📐' },
-  { value: '3:2',  label: '3:2',  icon: '🖼️' },
-  { value: '5:4',  label: '5:4',  icon: '🟫' },
-  { value: '4:5',  label: '4:5',  icon: '🗂️' },
-]
-
-const RESOLUTIONS: { value: Resolution; label: string; desc: string }[] = [
-  { value: '1K', label: '1K', desc: '1024 px' },
-  { value: '2K', label: '2K', desc: '2048 px' },
-  { value: '4K', label: '4K', desc: '4096 px' },
-]
-
-const PROMPT_ENHANCERS = [
-  'ultra-realistic',
-  'photorealistic',
-  '8K resolution',
-  'highly detailed',
-  'professional photography',
-  'cinematic',
-  'masterpiece',
-  'award-winning',
-  'sharp focus',
-  'studio lighting',
-]
-
-export default function PromptDisplay({
-  prompt,
-  onChange,
-  status,
-  aspectRatio,
-  onAspectRatioChange,
-  resolution,
-  onResolutionChange,
-  onGenerate,
-  isGenerating,
-}: Props) {
+export default function PromptDisplay({ prompt, onChange, status }: Props) {
   const textareaRef = useRef<HTMLTextAreaElement>(null)
+  const [copied, setCopied] = useState(false)
 
   // Auto-resize textarea
   useEffect(() => {
     const ta = textareaRef.current
     if (!ta) return
     ta.style.height = 'auto'
-    ta.style.height = `${Math.min(ta.scrollHeight, 280)}px`
+    ta.style.height = `${ta.scrollHeight}px`
   }, [prompt])
 
-  // Scroll to bottom while streaming
+  // Auto-scroll while streaming
   useEffect(() => {
     if (status === 'analyzing' && textareaRef.current) {
       textareaRef.current.scrollTop = textareaRef.current.scrollHeight
     }
   }, [prompt, status])
 
-  const addEnhancer = (enhancer: string) => {
-    if (prompt.includes(enhancer)) return
-    const sep = prompt.trim().endsWith(',') ? ' ' : ', '
-    onChange(prompt.trim() ? `${prompt.trim()}${sep}${enhancer}` : enhancer)
-  }
-
   const copyToClipboard = async () => {
     await navigator.clipboard.writeText(prompt)
+    setCopied(true)
+    setTimeout(() => setCopied(false), 2000)
   }
 
-  const charCount = prompt.length
+  const isEmpty = !prompt.trim()
 
   return (
-    <div className="flex flex-col gap-4 h-full">
-      {/* Prompt Textarea */}
+    <div className="flex flex-col gap-4 flex-1 min-h-0">
+
+      {/* Prompt area */}
       <div className="relative flex-1">
         <textarea
           ref={textareaRef}
@@ -95,139 +46,66 @@ export default function PromptDisplay({
           placeholder={
             status === 'analyzing'
               ? ''
-              : 'Your AI-generated prompt will appear here...\n\nUpload reference images and click "Analyze Images" to generate a detailed prompt.'
+              : 'Your structured prompt will appear here…\n\nUpload reference images, describe what you want, and click "Generate Prompt".'
           }
           className={`
-            w-full min-h-[160px] max-h-[280px] resize-none
-            input-field font-mono text-sm leading-relaxed
+            w-full min-h-[420px] resize-none rounded-2xl
+            bg-[#111] border border-[#2a2a2a] text-white
+            font-mono text-xs leading-relaxed p-4
+            focus:outline-none focus:border-banana-500/40
+            placeholder:text-dark-500 whitespace-pre
             ${status === 'analyzing' ? 'typing-cursor' : ''}
           `}
           readOnly={status === 'analyzing'}
+          spellCheck={false}
         />
 
-        {/* Character count + copy */}
-        {prompt.length > 0 && (
-          <div className="absolute bottom-3 right-3 flex items-center gap-2">
-            <span className="text-dark-500 text-xs">{charCount} chars</span>
-            <button
-              onClick={copyToClipboard}
-              className="btn-ghost p-1.5 text-dark-400 hover:text-banana-500"
-              title="Copy to clipboard"
-            >
-              <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2}
-                  d="M8 16H6a2 2 0 01-2-2V6a2 2 0 012-2h8a2 2 0 012 2v2m-6 12h8a2 2 0 002-2v-8a2 2 0 00-2-2h-8a2 2 0 00-2 2v8a2 2 0 002 2z" />
-              </svg>
-            </button>
-          </div>
-        )}
-
-        {/* Analyzing indicator */}
+        {/* Analyzing badge */}
         {status === 'analyzing' && (
-          <div className="absolute top-3 right-3 flex items-center gap-1.5 bg-[#0a0a0a]/80 px-2 py-1 rounded-lg">
+          <div className="absolute top-3 right-3 flex items-center gap-1.5 bg-[#0a0a0a]/90 px-2.5 py-1.5 rounded-lg border border-banana-500/30">
             <div className="w-1.5 h-1.5 rounded-full bg-banana-500 animate-pulse" />
-            <span className="text-banana-500 text-xs font-medium">Analyzing…</span>
+            <span className="text-banana-400 text-xs font-medium">Claude is writing…</span>
           </div>
         )}
       </div>
 
-      {/* Prompt Enhancers */}
-      {prompt.length > 0 && status !== 'analyzing' && (
-        <div className="flex flex-col gap-2 animate-fade-in">
-          <span className="section-label">Quick Enhancers</span>
-          <div className="flex flex-wrap gap-1.5">
-            {PROMPT_ENHANCERS.map((e) => {
-              const active = prompt.includes(e)
-              return (
-                <button
-                  key={e}
-                  onClick={() => addEnhancer(e)}
-                  className={`
-                    text-xs px-2.5 py-1 rounded-lg border transition-all duration-150
-                    ${active
-                      ? 'border-banana-500/60 bg-banana-500/10 text-banana-400 cursor-default'
-                      : 'border-[#3a3a3a] text-dark-400 hover:border-banana-500/40 hover:text-white hover:bg-[#2a2a2a] cursor-pointer'
-                    }
-                  `}
-                >
-                  {active ? '✓ ' : '+ '}{e}
-                </button>
-              )
-            })}
+      {/* Footer bar */}
+      {!isEmpty && status !== 'analyzing' && (
+        <div className="flex items-center justify-between animate-fade-in">
+          <span className="text-dark-500 text-xs">{prompt.length.toLocaleString()} chars · {prompt.split('\n').length} lines</span>
+
+          <div className="flex gap-2">
+            {/* Copy button — main CTA */}
+            <button
+              onClick={copyToClipboard}
+              className={`
+                flex items-center gap-2 px-5 py-2.5 rounded-xl font-semibold text-sm transition-all duration-200
+                ${copied
+                  ? 'bg-green-500/20 border border-green-500/40 text-green-400'
+                  : 'bg-banana-500 hover:bg-banana-400 text-black'
+                }
+              `}
+            >
+              {copied ? (
+                <>
+                  <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" />
+                  </svg>
+                  Copied!
+                </>
+              ) : (
+                <>
+                  <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2}
+                      d="M8 16H6a2 2 0 01-2-2V6a2 2 0 012-2h8a2 2 0 012 2v2m-6 12h8a2 2 0 002-2v-8a2 2 0 00-2-2h-8a2 2 0 00-2 2v8a2 2 0 002 2z" />
+                  </svg>
+                  Copy Prompt
+                </>
+              )}
+            </button>
           </div>
         </div>
       )}
-
-      {/* Aspect Ratio + Resolution Row */}
-      <div className="flex flex-col gap-3">
-        {/* Aspect Ratio */}
-        <div className="flex flex-col gap-2">
-          <span className="section-label">Aspect Ratio</span>
-          <div className="flex gap-1.5 flex-wrap">
-            {ASPECT_RATIOS.map((r) => (
-              <button
-                key={r.value}
-                onClick={() => onAspectRatioChange(r.value)}
-                className={`
-                  flex items-center gap-1 text-xs px-2.5 py-1.5 rounded-xl border transition-all duration-150
-                  ${aspectRatio === r.value
-                    ? 'border-banana-500 bg-banana-500/10 text-banana-400 font-semibold'
-                    : 'border-[#3a3a3a] text-dark-400 hover:border-[#4a4a4a] hover:text-white'
-                  }
-                `}
-              >
-                <span>{r.icon}</span>
-                <span>{r.label}</span>
-              </button>
-            ))}
-          </div>
-        </div>
-
-        {/* Resolution */}
-        <div className="flex flex-col gap-2">
-          <span className="section-label">Resolution</span>
-          <div className="flex gap-2">
-            {RESOLUTIONS.map((r) => (
-              <button
-                key={r.value}
-                onClick={() => onResolutionChange(r.value)}
-                className={`
-                  flex flex-col items-center px-4 py-2 rounded-xl border transition-all duration-150
-                  ${resolution === r.value
-                    ? 'border-banana-500 bg-banana-500/10 text-banana-400 font-semibold'
-                    : 'border-[#3a3a3a] text-dark-400 hover:border-[#4a4a4a] hover:text-white'
-                  }
-                `}
-              >
-                <span className="text-sm font-bold">{r.label}</span>
-                <span className="text-xs text-dark-500">{r.desc}</span>
-              </button>
-            ))}
-          </div>
-        </div>
-      </div>
-
-      {/* Generate Button */}
-      <button
-        onClick={onGenerate}
-        disabled={!prompt.trim() || isGenerating}
-        className="btn-primary w-full justify-center py-4 text-base"
-      >
-        {isGenerating ? (
-          <>
-            <svg className="w-5 h-5 animate-spin" fill="none" viewBox="0 0 24 24">
-              <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
-              <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z" />
-            </svg>
-            Generating Image…
-          </>
-        ) : (
-          <>
-            <span>✨</span>
-            Generate Image (Gemini 3 Pro)
-          </>
-        )}
-      </button>
     </div>
   )
 }
