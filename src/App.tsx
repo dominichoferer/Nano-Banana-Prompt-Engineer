@@ -3,6 +3,33 @@ import ImageUploader from './components/ImageUploader'
 import PromptDisplay from './components/PromptDisplay'
 import type { UploadedImage, AnalysisStatus, PromptMode } from './types'
 
+// Compress image to max 1600px longest side, JPEG 85% — keeps payload under Vercel's 4.5MB limit
+function compressImage(file: File): Promise<File> {
+  return new Promise((resolve) => {
+    const MAX_PX = 1600
+    const QUALITY = 0.85
+    const img = new Image()
+    const url = URL.createObjectURL(file)
+    img.onload = () => {
+      URL.revokeObjectURL(url)
+      const scale = Math.min(1, MAX_PX / Math.max(img.width, img.height))
+      const w = Math.round(img.width * scale)
+      const h = Math.round(img.height * scale)
+      const canvas = document.createElement('canvas')
+      canvas.width = w
+      canvas.height = h
+      canvas.getContext('2d')!.drawImage(img, 0, 0, w, h)
+      canvas.toBlob(
+        (blob) => resolve(new File([blob!], file.name, { type: 'image/jpeg' })),
+        'image/jpeg',
+        QUALITY,
+      )
+    }
+    img.onerror = () => resolve(file) // fallback: send original
+    img.src = url
+  })
+}
+
 export default function App() {
   const [images, setImages] = useState<UploadedImage[]>([])
   const [userDescription, setUserDescription] = useState('')
@@ -19,8 +46,10 @@ export default function App() {
     setPrompt('')
 
     try {
+      // Compress all images before upload (stays under Vercel 4.5MB body limit)
+      const compressed = await Promise.all(images.map((img) => compressImage(img.file)))
       const formData = new FormData()
-      images.forEach((img) => formData.append('images', img.file))
+      compressed.forEach((file) => formData.append('images', file))
       if (userDescription.trim()) formData.append('userDescription', userDescription.trim())
       formData.append('promptMode', promptMode)
 
