@@ -13,12 +13,12 @@ export type PromptMode = 'retouch' | 'generation'
 export type FocusArea = 'subject' | 'face' | 'pose' | 'lighting' | 'color' | 'skin' | 'background' | 'clothing'
 
 export const FOCUS_AREAS: { id: FocusArea; icon: string; label: string; hint: string }[] = [
-  { id: 'subject',    icon: '📐', label: 'Subject Lock',  hint: 'Proportions, silhouette & composition — no morphing'  },
-  { id: 'face',       icon: '🔒', label: 'Face Lock',     hint: 'Pixel-perfect facial features for every person'        },
-  { id: 'pose',       icon: '🧍', label: 'Pose',          hint: 'Body alignment, spacing, angles & expressions'         },
-  { id: 'lighting',   icon: '💡', label: 'Lighting',      hint: 'Camera specs, key/fill/rim lights, catchlights'        },
-  { id: 'color',      icon: '🎨', label: 'Color Grade',   hint: 'Tone, shadows, contrast & publication references'      },
-  { id: 'skin',       icon: '✨', label: 'Skin',          hint: 'Retouching technique & finish quality'                 },
-  { id: 'background', icon: '🏞️', label: 'Background',    hint: 'Exact replacement or environment enhancement'          },
-  { id: 'clothing',   icon: '👗', label: 'Clothing',      hint: 'Every item, color, material & accessories'             },
+  { id: 'subject',    icon: '📐', label: 'Proportionen',  hint: 'Proportionen, Silhouette & Komposition — kein Morphing'       },
+  { id: 'face',       icon: '🔒', label: 'Gesicht-Lock',  hint: 'Pixelgenaue Gesichtsmerkmale jeder Person erhalten'           },
+  { id: 'pose',       icon: '🧍', label: 'Pose',          hint: 'Körperhaltung, Abstände, Winkel & Ausdrücke'                  },
+  { id: 'lighting',   icon: '💡', label: 'Beleuchtung',   hint: 'Kamera-Setup, Haupt-/Füll-/Kantenlicht, Catchlights'         },
+  { id: 'color',      icon: '🎨', label: 'Farbgebung',    hint: 'Farbton, Schatten, Kontrast & Referenzpublikationen'         },
+  { id: 'skin',       icon: '✨', label: 'Haut',          hint: 'Retuschetechnik & Ergebnis-Qualität'                         },
+  { id: 'background', icon: '🏞️', label: 'Hintergrund',   hint: 'Exakter Austausch oder Umgebungsverbesserung'                },
+  { id: 'clothing',   icon: '👗', label: 'Kleidung',      hint: 'Jedes Teil, Farbe, Material & Accessoires'                   },
 ]

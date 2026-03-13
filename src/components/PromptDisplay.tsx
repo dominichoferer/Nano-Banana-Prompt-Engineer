@@ -1,15 +1,43 @@
 import { useRef, useEffect, useState } from 'react'
-import type { AnalysisStatus } from '../types'
+import type { AnalysisStatus, UploadedImage } from '../types'
 
 interface Props {
   prompt: string
   onChange: (value: string) => void
   status: AnalysisStatus
+  images: UploadedImage[]
 }
 
-export default function PromptDisplay({ prompt, onChange, status }: Props) {
+async function toClipboard(prompt: string, images: UploadedImage[]) {
+  const textBlob = new Blob([prompt], { type: 'text/plain' })
+
+  // Try to include the first image as PNG alongside the text
+  if (images.length > 0 && 'ClipboardItem' in window) {
+    try {
+      const bmp = await createImageBitmap(images[0].file)
+      const canvas = document.createElement('canvas')
+      canvas.width = bmp.width
+      canvas.height = bmp.height
+      canvas.getContext('2d')!.drawImage(bmp, 0, 0)
+      const pngBlob = await new Promise<Blob>((res) =>
+        canvas.toBlob((b) => res(b!), 'image/png'),
+      )
+      await navigator.clipboard.write([
+        new ClipboardItem({ 'text/plain': textBlob, 'image/png': pngBlob }),
+      ])
+      return 'both' // prompt + image
+    } catch {
+      // Browser blocked image write (e.g. Firefox) — fall through to text-only
+    }
+  }
+
+  await navigator.clipboard.writeText(prompt)
+  return 'text'
+}
+
+export default function PromptDisplay({ prompt, onChange, status, images }: Props) {
   const textareaRef = useRef<HTMLTextAreaElement>(null)
-  const [copied, setCopied] = useState(false)
+  const [copyState, setCopyState] = useState<'idle' | 'both' | 'text'>('idle')
 
   // Auto-resize textarea
   useEffect(() => {
@@ -26,10 +54,10 @@ export default function PromptDisplay({ prompt, onChange, status }: Props) {
     }
   }, [prompt, status])
 
-  const copyToClipboard = async () => {
-    await navigator.clipboard.writeText(prompt)
-    setCopied(true)
-    setTimeout(() => setCopied(false), 2000)
+  const handleCopy = async () => {
+    const result = await toClipboard(prompt, images)
+    setCopyState(result)
+    setTimeout(() => setCopyState('idle'), 2200)
   }
 
   const isEmpty = !prompt.trim()
@@ -46,7 +74,7 @@ export default function PromptDisplay({ prompt, onChange, status }: Props) {
           placeholder={
             status === 'analyzing'
               ? ''
-              : 'Your structured prompt will appear here…\n\nUpload reference images, describe what you want, and click "Generate Prompt".'
+              : 'Dein strukturierter Prompt erscheint hier…\n\nLade Referenzbilder hoch, beschreibe was du möchtest, und klicke "Prompt generieren".'
           }
           className={`
             w-full min-h-[420px] resize-none rounded-2xl
@@ -64,7 +92,7 @@ export default function PromptDisplay({ prompt, onChange, status }: Props) {
         {status === 'analyzing' && (
           <div className="absolute top-3 right-3 flex items-center gap-1.5 bg-[#0a0a0a]/90 px-2.5 py-1.5 rounded-lg border border-banana-500/30">
             <div className="w-1.5 h-1.5 rounded-full bg-banana-500 animate-pulse" />
-            <span className="text-banana-400 text-xs font-medium">Claude is writing…</span>
+            <span className="text-banana-400 text-xs font-medium">Claude schreibt…</span>
           </div>
         )}
       </div>
@@ -72,26 +100,27 @@ export default function PromptDisplay({ prompt, onChange, status }: Props) {
       {/* Footer bar */}
       {!isEmpty && status !== 'analyzing' && (
         <div className="flex items-center justify-between animate-fade-in">
-          <span className="text-dark-500 text-xs">{prompt.length.toLocaleString()} chars · {prompt.split('\n').length} lines</span>
+          <span className="text-dark-500 text-xs">
+            {prompt.length.toLocaleString('de')} Zeichen · {prompt.split('\n').length} Zeilen
+          </span>
 
           <div className="flex gap-2">
-            {/* Copy button — main CTA */}
             <button
-              onClick={copyToClipboard}
+              onClick={handleCopy}
               className={`
                 flex items-center gap-2 px-5 py-2.5 rounded-xl font-semibold text-sm transition-all duration-200
-                ${copied
+                ${copyState !== 'idle'
                   ? 'bg-green-500/20 border border-green-500/40 text-green-400'
                   : 'bg-banana-500 hover:bg-banana-400 text-black'
                 }
               `}
             >
-              {copied ? (
+              {copyState !== 'idle' ? (
                 <>
                   <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                     <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" />
                   </svg>
-                  Copied!
+                  {copyState === 'both' ? 'Prompt + Bild kopiert!' : 'Prompt kopiert!'}
                 </>
               ) : (
                 <>
@@ -99,7 +128,7 @@ export default function PromptDisplay({ prompt, onChange, status }: Props) {
                     <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2}
                       d="M8 16H6a2 2 0 01-2-2V6a2 2 0 012-2h8a2 2 0 012 2v2m-6 12h8a2 2 0 002-2v-8a2 2 0 00-2-2h-8a2 2 0 00-2 2v8a2 2 0 002 2z" />
                   </svg>
-                  Copy Prompt
+                  {images.length > 0 ? 'Prompt + Bild kopieren' : 'Prompt kopieren'}
                 </>
               )}
             </button>

@@ -124,7 +124,7 @@ export default function App() {
                 Nano Banana
                 <span className="text-banana-500 ml-1.5">Prompt Engineer</span>
               </h1>
-              <p className="text-dark-400 text-xs">Claude Vision · Structured Prompt Generation</p>
+              <p className="text-dark-400 text-xs">Claude Vision · Strukturierte Prompt-Erstellung</p>
             </div>
           </div>
 
@@ -141,8 +141,8 @@ export default function App() {
                 analysisStatus === 'analyzing' ? 'bg-banana-500 animate-pulse' :
                 analysisStatus === 'done' ? 'bg-green-500' : 'bg-[#3a3a3a]'
               }`} />
-              {analysisStatus === 'analyzing' ? 'Generating prompt…' :
-               analysisStatus === 'done' ? 'Prompt ready' : 'Claude Vision ready'}
+              {analysisStatus === 'analyzing' ? 'Prompt wird erstellt…' :
+               analysisStatus === 'done' ? 'Prompt bereit' : 'Claude Vision bereit'}
             </span>
           </div>
         </div>
@@ -158,8 +158,8 @@ export default function App() {
             {/* Prompt Mode Toggle */}
             <div className="glass-card p-5 flex flex-col gap-4">
               <div>
-                <span className="section-label">Prompt Mode</span>
-                <p className="text-dark-400 text-xs mt-0.5">How should Claude interpret your reference?</p>
+                <span className="section-label">Prompt-Modus</span>
+                <p className="text-dark-400 text-xs mt-0.5">Wie soll Claude dein Referenzbild interpretieren?</p>
               </div>
               <div className="grid grid-cols-2 gap-2">
                 <button
@@ -174,9 +174,9 @@ export default function App() {
                 >
                   <span className="text-base">📷</span>
                   <span className={`text-xs font-semibold ${promptMode === 'retouch' ? 'text-banana-400' : 'text-white'}`}>
-                    Photo Retouch
+                    Foto-Retusche
                   </span>
-                  <span className="text-dark-500 text-xs leading-snug">Preserve identity, fix & enhance</span>
+                  <span className="text-dark-500 text-xs leading-snug">Identität erhalten, korrigieren & verbessern</span>
                 </button>
                 <button
                   onClick={() => setPromptMode('generation')}
@@ -190,9 +190,9 @@ export default function App() {
                 >
                   <span className="text-base">✨</span>
                   <span className={`text-xs font-semibold ${promptMode === 'generation' ? 'text-banana-400' : 'text-white'}`}>
-                    New Generation
+                    Neu generieren
                   </span>
-                  <span className="text-dark-500 text-xs leading-snug">Use as visual style guide</span>
+                  <span className="text-dark-500 text-xs leading-snug">Als visuellen Stil-Guide verwenden</span>
                 </button>
               </div>
             </div>
@@ -201,8 +201,8 @@ export default function App() {
             <div className="glass-card p-5 flex flex-col gap-4">
               <div className="flex items-center justify-between">
                 <div>
-                  <span className="section-label">Step 1</span>
-                  <h2 className="text-white font-semibold mt-0.5">Reference Images</h2>
+                  <span className="section-label">Schritt 1</span>
+                  <h2 className="text-white font-semibold mt-0.5">Referenzbilder</h2>
                 </div>
                 <div className="w-8 h-8 rounded-xl bg-banana-500/10 border border-banana-500/20 flex items-center justify-center text-sm font-bold text-banana-500">
                   1
@@ -220,9 +220,9 @@ export default function App() {
             <div className="glass-card p-5 flex flex-col gap-4">
               <div className="flex items-center justify-between">
                 <div>
-                  <span className="section-label">Step 2</span>
+                  <span className="section-label">Schritt 2</span>
                   <h2 className="text-white font-semibold mt-0.5">
-                    {promptMode === 'retouch' ? 'What to fix / change' : 'What to generate'}
+                    {promptMode === 'retouch' ? 'Was korrigieren / ändern' : 'Was generieren'}
                   </h2>
                 </div>
                 <div className="w-8 h-8 rounded-xl bg-banana-500/10 border border-banana-500/20 flex items-center justify-center text-sm font-bold text-banana-500">
@@ -234,9 +234,9 @@ export default function App() {
               <div className="flex flex-col gap-2">
                 <div className="flex items-center justify-between">
                   <span className="text-dark-400 text-xs">
-                    Focus areas
+                    Fokus-Bereiche
                     <span className="text-dark-600 ml-1">
-                      {focusAreas.length === 0 ? '— all sections' : `— ${focusAreas.length} selected`}
+                      {focusAreas.length === 0 ? '— alle Bereiche' : `— ${focusAreas.length} ausgewählt`}
                     </span>
                   </span>
                   {focusAreas.length > 0 && (
@@ -244,7 +244,7 @@ export default function App() {
                       onClick={() => setFocusAreas([])}
                       className="text-dark-500 hover:text-dark-300 text-xs transition-colors"
                     >
-                      clear
+                      leeren
                     </button>
                   )}
                 </div>
@@ -280,8 +280,8 @@ export default function App() {
                 onChange={(e) => setUserDescription(e.target.value)}
                 disabled={analysisStatus === 'analyzing'}
                 placeholder={promptMode === 'retouch'
-                  ? 'e.g. Replace the black background with seamless white studio background. Fix posture — both subjects more upright. Bring them closer together, shoulders touching. Apply professional 3-point studio lighting. 8K output, zero AI artifacts.'
-                  : 'e.g. A luxury skincare product on a marble surface, dramatic side lighting, deep shadows, editorial magazine style…'
+                  ? 'z.B. Schwarzen Hintergrund durch nahtlosen weißen Studio-Hintergrund ersetzen. Haltung korrigieren — beide Personen aufrechter. Näher zusammenbringen, Schultern berühren sich. Professionelle 3-Punkt-Studiobeleuchtung. 8K-Ausgabe, null KI-Artefakte.'
+                  : 'z.B. Ein Luxus-Hautpflegeprodukt auf einer Marmoroberfläche, dramatisches Seitenlicht, tiefe Schatten, Editorial-Magazin-Stil…'
                 }
                 rows={6}
                 className="w-full resize-none input-field text-sm leading-relaxed"
@@ -299,12 +299,12 @@ export default function App() {
                       <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
                       <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z" />
                     </svg>
-                    Claude is analyzing…
+                    Claude analysiert…
                   </>
                 ) : (
                   <>
                     <span>🔍</span>
-                    Generate Prompt
+                    Prompt generieren
                   </>
                 )}
               </button>
@@ -312,7 +312,7 @@ export default function App() {
               {/* Error */}
               {analysisStatus === 'error' && analysisError && (
                 <div className="bg-red-500/10 border border-red-500/30 rounded-xl p-3">
-                  <p className="text-red-400 text-xs font-medium">Error</p>
+                  <p className="text-red-400 text-xs font-medium">Fehler</p>
                   <p className="text-red-300/80 text-xs mt-1 leading-relaxed">{analysisError}</p>
                 </div>
               )}
@@ -320,9 +320,9 @@ export default function App() {
               {/* Hint */}
               <div className="bg-[#1a1a1a] border border-[#2a2a2a] rounded-xl p-3">
                 <p className="text-dark-400 text-xs leading-relaxed">
-                  <span className="text-banana-500 font-semibold">Claude claude-opus-4-6</span> analyzes your
-                  reference images and generates a structured, detailed prompt ready to use in{' '}
-                  <span className="text-white font-medium">Nano Banana Pro</span> or any AI image tool.
+                  <span className="text-banana-500 font-semibold">Claude claude-opus-4-6</span> analysiert deine
+                  Referenzbilder und erstellt einen strukturierten, detaillierten Prompt — direkt bereit für{' '}
+                  <span className="text-white font-medium">Nano Banana Pro</span> oder jedes andere KI-Bildtool.
                 </p>
               </div>
             </div>
@@ -332,13 +332,13 @@ export default function App() {
           <div className="lg:col-span-3 glass-card p-6 flex flex-col gap-5" style={{ minHeight: '600px' }}>
             <div className="flex items-center justify-between">
               <div>
-                <span className="section-label">Step 3</span>
-                <h2 className="text-white font-semibold mt-0.5">Generated Prompt</h2>
+                <span className="section-label">Schritt 3</span>
+                <h2 className="text-white font-semibold mt-0.5">Generierter Prompt</h2>
               </div>
               <div className="flex items-center gap-2">
                 {analysisStatus === 'done' && (
                   <span className="text-xs text-green-400 bg-green-500/10 border border-green-500/20 px-2 py-1 rounded-lg animate-fade-in">
-                    Ready to paste
+                    Bereit zum Einfügen
                   </span>
                 )}
                 <div className="w-8 h-8 rounded-xl bg-banana-500/10 border border-banana-500/20 flex items-center justify-center text-sm font-bold text-banana-500">
@@ -351,6 +351,7 @@ export default function App() {
               prompt={prompt}
               onChange={setPrompt}
               status={analysisStatus}
+              images={images}
             />
           </div>
         </div>
@@ -360,18 +361,18 @@ export default function App() {
           {[
             {
               icon: '🖼️',
-              title: 'Upload Reference Image',
-              desc: 'Upload the photo you want to retouch or use as style reference. Multiple images are supported.',
+              title: 'Referenzbild hochladen',
+              desc: 'Lade das Foto hoch, das du retuschieren oder als Stil-Referenz verwenden möchtest. Mehrere Bilder werden unterstützt.',
             },
             {
               icon: '🧠',
-              title: 'Describe What You Want',
-              desc: 'Tell Claude what to fix, change, or generate. Background, lighting, pose, style — be as specific as you want.',
+              title: 'Beschreibe, was du möchtest',
+              desc: 'Sag Claude, was korrigiert, geändert oder generiert werden soll. Hintergrund, Licht, Pose, Stil — so genau wie du willst.',
             },
             {
               icon: '📋',
-              title: 'Copy & Paste into Nano Banana',
-              desc: 'Claude generates a structured, detailed prompt with face locks, lighting specs, and color grading. Copy and paste directly.',
+              title: 'Kopieren & in Nano Banana einfügen',
+              desc: 'Claude erstellt einen strukturierten Prompt mit Face-Lock, Beleuchtungsangaben und Farbgebung — Prompt und Bild werden zusammen kopiert.',
             },
           ].map((step) => (
             <div key={step.title} className="bg-[#141414] border border-[#1e1e1e] rounded-2xl p-5 flex gap-4">
@@ -389,7 +390,7 @@ export default function App() {
       <footer className="border-t border-[#1e1e1e] mt-8">
         <div className="max-w-[1400px] mx-auto px-6 py-4 flex items-center justify-between">
           <p className="text-dark-500 text-xs">🍌 Nano Banana Prompt Engineer</p>
-          <p className="text-dark-600 text-xs">Powered by Claude claude-opus-4-6 Vision</p>
+          <p className="text-dark-600 text-xs">Betrieben von Claude claude-opus-4-6 Vision</p>
         </div>
       </footer>
     </div>
