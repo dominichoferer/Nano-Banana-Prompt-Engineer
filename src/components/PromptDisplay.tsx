@@ -8,20 +8,24 @@ interface Props {
   images: UploadedImage[]
 }
 
-function downloadImage(file: File) {
-  const url = URL.createObjectURL(file)
-  const a = document.createElement('a')
-  a.href = url
-  a.download = file.name || 'referenz.jpg'
-  a.click()
-  URL.revokeObjectURL(url)
-}
+const CopyIcon = () => (
+  <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2}
+      d="M8 16H6a2 2 0 01-2-2V6a2 2 0 012-2h8a2 2 0 012 2v2m-6 12h8a2 2 0 002-2v-8a2 2 0 00-2-2h-8a2 2 0 00-2 2v8a2 2 0 002 2z" />
+  </svg>
+)
+
+const CheckIcon = () => (
+  <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" />
+  </svg>
+)
 
 export default function PromptDisplay({ prompt, onChange, status, images }: Props) {
   const textareaRef = useRef<HTMLTextAreaElement>(null)
-  const [copyState, setCopyState] = useState<'idle' | 'done'>('idle')
+  const [promptCopied, setPromptCopied] = useState(false)
+  const [imageCopied, setImageCopied] = useState(false)
 
-  // Auto-resize textarea
   useEffect(() => {
     const ta = textareaRef.current
     if (!ta) return
@@ -29,20 +33,35 @@ export default function PromptDisplay({ prompt, onChange, status, images }: Prop
     ta.style.height = `${ta.scrollHeight}px`
   }, [prompt])
 
-  // Auto-scroll while streaming
   useEffect(() => {
     if (status === 'analyzing' && textareaRef.current) {
       textareaRef.current.scrollTop = textareaRef.current.scrollHeight
     }
   }, [prompt, status])
 
-  const handleCopy = async () => {
-    // Copy prompt text to clipboard (reliable across all browsers)
+  const handleCopyPrompt = async () => {
     await navigator.clipboard.writeText(prompt)
-    // Download images so user has them ready to upload into Nano Banana
-    images.forEach((img) => downloadImage(img.file))
-    setCopyState('done')
-    setTimeout(() => setCopyState('idle'), 2500)
+    setPromptCopied(true)
+    setTimeout(() => setPromptCopied(false), 2000)
+  }
+
+  const handleCopyImage = async () => {
+    if (images.length === 0 || !('ClipboardItem' in window)) return
+    try {
+      const bmp = await createImageBitmap(images[0].file)
+      const canvas = document.createElement('canvas')
+      canvas.width = bmp.width
+      canvas.height = bmp.height
+      canvas.getContext('2d')!.drawImage(bmp, 0, 0)
+      const pngBlob = await new Promise<Blob>((res) =>
+        canvas.toBlob((b) => res(b!), 'image/png'),
+      )
+      await navigator.clipboard.write([new ClipboardItem({ 'image/png': pngBlob })])
+      setImageCopied(true)
+      setTimeout(() => setImageCopied(false), 2000)
+    } catch {
+      // fallback: ignore silently
+    }
   }
 
   const isEmpty = !prompt.trim()
@@ -51,7 +70,6 @@ export default function PromptDisplay({ prompt, onChange, status, images }: Prop
   return (
     <div className="flex flex-col gap-4 flex-1 min-h-0">
 
-      {/* Prompt area */}
       <div className="relative flex-1">
         <textarea
           ref={textareaRef}
@@ -74,7 +92,6 @@ export default function PromptDisplay({ prompt, onChange, status, images }: Prop
           spellCheck={false}
         />
 
-        {/* Analyzing badge */}
         {status === 'analyzing' && (
           <div className="absolute top-3 right-3 flex items-center gap-1.5 bg-[#0a0a0a]/90 px-2.5 py-1.5 rounded-lg border border-banana-500/30">
             <div className="w-1.5 h-1.5 rounded-full bg-banana-500 animate-pulse" />
@@ -83,7 +100,6 @@ export default function PromptDisplay({ prompt, onChange, status, images }: Prop
         )}
       </div>
 
-      {/* Footer bar */}
       {!isEmpty && status !== 'analyzing' && (
         <div className="flex items-center justify-between animate-fade-in">
           <span className="text-dark-500 text-xs">
@@ -91,42 +107,39 @@ export default function PromptDisplay({ prompt, onChange, status, images }: Prop
           </span>
 
           <div className="flex gap-2">
+            {/* Image copy — only shown when images are present */}
+            {hasImages && (
+              <button
+                onClick={handleCopyImage}
+                className={`
+                  flex items-center gap-2 px-4 py-2.5 rounded-xl font-semibold text-sm transition-all duration-200
+                  ${imageCopied
+                    ? 'bg-green-500/20 border border-green-500/40 text-green-400'
+                    : 'border border-[#3a3a3a] text-dark-300 hover:border-[#4a4a4a] hover:text-white'
+                  }
+                `}
+              >
+                {imageCopied ? <CheckIcon /> : <CopyIcon />}
+                {imageCopied ? 'Bild kopiert!' : 'Bild kopieren'}
+              </button>
+            )}
+
+            {/* Prompt copy — primary CTA */}
             <button
-              onClick={handleCopy}
+              onClick={handleCopyPrompt}
               className={`
                 flex items-center gap-2 px-5 py-2.5 rounded-xl font-semibold text-sm transition-all duration-200
-                ${copyState === 'done'
+                ${promptCopied
                   ? 'bg-green-500/20 border border-green-500/40 text-green-400'
                   : 'bg-banana-500 hover:bg-banana-400 text-black'
                 }
               `}
             >
-              {copyState === 'done' ? (
-                <>
-                  <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" />
-                  </svg>
-                  {hasImages ? 'Prompt kopiert · Bild gespeichert!' : 'Prompt kopiert!'}
-                </>
-              ) : (
-                <>
-                  <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2}
-                      d="M8 16H6a2 2 0 01-2-2V6a2 2 0 012-2h8a2 2 0 012 2v2m-6 12h8a2 2 0 002-2v-8a2 2 0 00-2-2h-8a2 2 0 00-2 2v8a2 2 0 002 2z" />
-                  </svg>
-                  {hasImages ? 'Prompt kopieren + Bild speichern' : 'Prompt kopieren'}
-                </>
-              )}
+              {promptCopied ? <CheckIcon /> : <CopyIcon />}
+              {promptCopied ? 'Prompt kopiert!' : 'Prompt kopieren'}
             </button>
           </div>
         </div>
-      )}
-
-      {/* Info hint shown after copy */}
-      {copyState === 'done' && hasImages && (
-        <p className="text-dark-500 text-xs text-right animate-fade-in">
-          Prompt in der Zwischenablage · Bild wurde heruntergeladen — beides in Nano Banana einfügen
-        </p>
       )}
     </div>
   )
