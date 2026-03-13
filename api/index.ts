@@ -102,65 +102,86 @@ WRITING STYLE RULES
 
 // ── User template ───────────────────────────────────────────────────────────
 
-const FOCUS_SECTION_MAP: Record<string, string> = {
-  subject:    'SUBJECT LOCK section — preserve exact proportions, silhouette, shape and overall composition of the main subject (person, body, object or product); no morphing, resizing, or restructuring',
-  face:       'FACE LOCK section — pixel-perfect facial feature preservation for every person',
-  pose:       'POSE & POSITIONING section — body alignment, spacing, angles, expressions',
-  lighting:   'LIGHTING section — camera specs, key/fill/rim lights, catchlights',
-  color:      'COLOR GRADING section — tone, shadows, whites, contrast, publication references',
-  skin:       'SKIN RETOUCHING — technique, frequency separation, output finish',
+// What to LOCK (preserve exactly) per area
+const LOCK_MAP: Record<string, string> = {
+  subject:  'SUBJECT LOCK section — preserve exact proportions, silhouette, shape and overall composition; no morphing, resizing, or restructuring',
+  face:     'FACE LOCK section — pixel-perfect facial feature preservation for every person present',
+  skin:     'SKIN LOCK section — preserve exact skin tone, texture, pores, body characteristics unchanged',
+  clothing: 'CLOTHING LOCK section — preserve every clothing item, color, material, fit and accessories exactly',
+}
+
+// What to CHANGE per area
+const CHANGE_MAP: Record<string, string> = {
+  pose:       'POSE & POSITIONING section — required body alignment, spacing, angles, expression corrections',
+  lighting:   'LIGHTING section — camera specs, key/fill/rim lights, catchlights, required improvements',
+  color:      'COLOR GRADING section — tone, shadows, whites, contrast adjustments',
   background: 'BACKGROUND section — exact replacement or enhancement description',
-  clothing:   'SUBJECT & CLOTHING section — every clothing item, color, material, accessories',
+}
+
+// What to extract from the image per area (analysis checklist)
+const ANALYSIS_MAP: Record<string, string> = {
+  subject:    'Overall proportions, silhouette, shape and spatial composition of the main subject',
+  face:       'Facial features of every person (shape, color, texture, hair, eyebrows)',
+  skin:       'Skin tone, texture quality, body characteristics',
+  clothing:   'All clothing items, colors, materials, fit, accessories, footwear',
+  pose:       'Body alignment, spacing, posture, angles, hand/arm positions, expressions',
+  lighting:   'Lighting quality, direction, shadows, catchlights',
+  color:      'Color grading, tone, warmth/coolness, contrast',
+  background: 'Background content and what needs to change',
 }
 
 function buildUserMessage(
   count: number,
   userDescription?: string,
   promptMode?: string,
-  focusAreas?: string[],
+  lockAreas?: string[],
+  changeAreas?: string[],
 ): string {
   const isRetouch = promptMode !== 'generation'
-  const modeLabel = isRetouch ? 'PHOTO RETOUCH' : 'NEW GENERATION'
   const imageRef = count > 1 ? `these ${count} reference images` : 'this reference image'
+  const hasLock = (lockAreas?.length ?? 0) > 0
+  const hasChange = (changeAreas?.length ?? 0) > 0
+  const hasSelections = hasLock || hasChange
 
-  const changeBlock = userDescription
-    ? `\n\nUSER'S REQUESTED CHANGES / INTENT:\n"${userDescription}"\n\nAnalyze the reference image, then incorporate these changes into the structured prompt. Preserve everything from the reference that is NOT explicitly changed.`
-    : `\n\nGenerate a prompt to ${isRetouch ? 'perfectly retouch and enhance this image' : 'create a new image inspired by the visual style and composition of this reference'}.`
+  // ── Case: nothing selected → lean prompt from user text only ──────────────
+  if (!hasSelections) {
+    const instruction = userDescription?.trim()
+      ? `Apply ONLY the following change — everything else stays exactly as in the reference:\n"${userDescription.trim()}"`
+      : `Perfectly retouch and enhance this image while preserving every detail of the original.`
+    return `USE THE UPLOADED PHOTO AS STRICT REFERENCE BASE.
+THIS IS A PHOTO RETOUCH — NOT A NEW IMAGE GENERATION.
 
-  const hasFocus = focusAreas && focusAreas.length > 0
-  const focusBlock = hasFocus
-    ? `\n\n⚡ FOCUS MODE — Only generate the following sections (keep the prompt concise and targeted):\n${focusAreas!.map((f) => `— ${FOCUS_SECTION_MAP[f] ?? f}`).join('\n')}\nAlways include the header line and OUTPUT SPECS. Omit all other sections entirely.`
+${instruction}
+
+Analyze ${imageRef} and generate a concise, targeted structured prompt.
+Include only the header line, the specific change instructions, and OUTPUT SPECS.
+Start directly with the header line — no preamble.`
+  }
+
+  // ── Case: selections made → targeted structured prompt ────────────────────
+  const allAreas = [...(lockAreas ?? []), ...(changeAreas ?? [])]
+
+  const lockBlock = hasLock
+    ? `\n\n🔒 LOCK — Preserve these sections EXACTLY from the reference:\n${lockAreas!.map((f) => `— ${LOCK_MAP[f] ?? f}`).join('\n')}`
     : ''
 
-  const checklistItems = hasFocus
-    ? focusAreas!.map((f) => {
-        const checks: Record<string, string> = {
-          subject:    'Overall proportions, silhouette, shape and spatial composition of the main subject (body, object, product) — note exact dimensions and structure',
-          face:       'Facial features of every person (shape, color, texture, hair)',
-          pose:       'Body alignment, spacing, posture, angles, expressions',
-          lighting:   'Lighting quality, direction, shadows, catchlights',
-          color:      'Color grading, tone, warmth/coolness, contrast',
-          skin:       'Skin texture, retouching needs',
-          background: 'Background content and required changes',
-          clothing:   'All clothing items, colors, materials, accessories',
-        }
-        return checks[f] ?? f
-      })
-    : [
-        'Count and position every person present',
-        'For each person: complete facial feature description, hair, skin tone, every clothing item with exact colors and materials, accessories, footwear',
-        'Current pose: body alignment, spacing between subjects, posture quality, angles, hand/arm positions, expressions',
-        'Current lighting: quality, direction, shadows, catchlights present',
-        'Current background: what it is, what it should become',
-        'Current color grading: tone, warmth/coolness, contrast',
-      ]
+  const changeBlock = hasChange
+    ? `\n\n✏️ CHANGE — Only modify these sections (incorporate user intent below):\n${changeAreas!.map((f) => `— ${CHANGE_MAP[f] ?? f}`).join('\n')}`
+    : ''
 
-  return `Analyze ${imageRef} in extreme detail for a ${modeLabel} job.${changeBlock}${focusBlock}
+  const userBlock = userDescription?.trim()
+    ? `\n\nUSER'S INTENT:\n"${userDescription.trim()}"`
+    : ''
 
-ANALYSIS CHECKLIST — extract all of these from the reference image:
+  const checklistItems = allAreas.map((f) => ANALYSIS_MAP[f] ?? f)
+
+  return `Analyze ${imageRef} for a targeted PHOTO RETOUCH job.${lockBlock}${changeBlock}${userBlock}
+
+ANALYSIS CHECKLIST — extract these from the reference:
 ${checklistItems.map((i) => `— ${i}`).join('\n')}
 
-OUTPUT: Generate the ${hasFocus ? 'focused, concise' : 'complete'} structured prompt NOW, following the format from your system instructions. Start directly with the header line — no preamble.`
+OUTPUT: Generate the focused structured prompt NOW, following the format from your system instructions.
+Include ONLY the sections listed above (lock + change). Always include the header line and OUTPUT SPECS. Start directly — no preamble.`
 }
 
 // ── Analyze endpoint ────────────────────────────────────────────────────────
@@ -170,8 +191,10 @@ app.post('/api/analyze', upload.array('images', 10), async (req: Request, res: R
     const files = req.files as Express.Multer.File[]
     const userDescription = req.body?.userDescription as string | undefined
     const promptMode = req.body?.promptMode as string | undefined
-    const focusAreasRaw = req.body?.focusAreas as string | undefined
-    const focusAreas = focusAreasRaw ? focusAreasRaw.split(',').filter(Boolean) : []
+    const lockAreasRaw = req.body?.lockAreas as string | undefined
+    const changeAreasRaw = req.body?.changeAreas as string | undefined
+    const lockAreas = lockAreasRaw ? lockAreasRaw.split(',').filter(Boolean) : []
+    const changeAreas = changeAreasRaw ? changeAreasRaw.split(',').filter(Boolean) : []
 
     if (!files || files.length === 0) {
       return res.status(400).json({ error: 'No images provided' })
@@ -209,7 +232,7 @@ app.post('/api/analyze', upload.array('images', 10), async (req: Request, res: R
             ...imageContent,
             {
               type: 'text',
-              text: buildUserMessage(files.length, userDescription, promptMode, focusAreas),
+              text: buildUserMessage(files.length, userDescription, promptMode, lockAreas, changeAreas),
             },
           ],
         },

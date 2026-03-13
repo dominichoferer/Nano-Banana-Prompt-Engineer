@@ -2,7 +2,7 @@ import { useState, useCallback } from 'react'
 import ImageUploader from './components/ImageUploader'
 import PromptDisplay from './components/PromptDisplay'
 import type { UploadedImage, AnalysisStatus, PromptMode, FocusArea } from './types'
-import { FOCUS_AREAS } from './types'
+import { LOCK_AREAS, CHANGE_AREAS } from './types'
 
 // Compress image to max 1600px longest side, JPEG 85% — keeps payload under Vercel's 4.5MB limit
 function compressImage(file: File): Promise<File> {
@@ -35,7 +35,8 @@ export default function App() {
   const [images, setImages] = useState<UploadedImage[]>([])
   const [userDescription, setUserDescription] = useState('')
   const [promptMode, setPromptMode] = useState<PromptMode>('retouch')
-  const [focusAreas, setFocusAreas] = useState<FocusArea[]>([])
+  const [lockAreas, setLockAreas] = useState<FocusArea[]>([])
+  const [changeAreas, setChangeAreas] = useState<FocusArea[]>([])
   const [prompt, setPrompt] = useState('')
   const [analysisStatus, setAnalysisStatus] = useState<AnalysisStatus>('idle')
   const [analysisError, setAnalysisError] = useState<string | null>(null)
@@ -54,7 +55,8 @@ export default function App() {
       compressed.forEach((file) => formData.append('images', file))
       if (userDescription.trim()) formData.append('userDescription', userDescription.trim())
       formData.append('promptMode', promptMode)
-      if (focusAreas.length > 0) formData.append('focusAreas', focusAreas.join(','))
+      if (lockAreas.length > 0) formData.append('lockAreas', lockAreas.join(','))
+      if (changeAreas.length > 0) formData.append('changeAreas', changeAreas.join(','))
 
       const response = await fetch('/api/analyze', {
         method: 'POST',
@@ -101,12 +103,14 @@ export default function App() {
       setAnalysisError(message)
       setAnalysisStatus('error')
     }
-  }, [images, userDescription, promptMode, focusAreas])
+  }, [images, userDescription, promptMode, lockAreas, changeAreas])
 
-  const toggleFocus = useCallback((area: FocusArea) => {
-    setFocusAreas((prev) =>
-      prev.includes(area) ? prev.filter((a) => a !== area) : [...prev, area],
-    )
+  const toggleLock = useCallback((area: FocusArea) => {
+    setLockAreas((prev) => prev.includes(area) ? prev.filter((a) => a !== area) : [...prev, area])
+  }, [])
+
+  const toggleChange = useCallback((area: FocusArea) => {
+    setChangeAreas((prev) => prev.includes(area) ? prev.filter((a) => a !== area) : [...prev, area])
   }, [])
 
   const canAnalyze = images.length > 0 && analysisStatus !== 'analyzing'
@@ -222,7 +226,7 @@ export default function App() {
                 <div>
                   <span className="section-label">Schritt 2</span>
                   <h2 className="text-white font-semibold mt-0.5">
-                    {promptMode === 'retouch' ? 'Was korrigieren / ändern' : 'Was generieren'}
+                    {promptMode === 'retouch' ? 'Was ändern / was behalten' : 'Was generieren'}
                   </h2>
                 </div>
                 <div className="w-8 h-8 rounded-xl bg-banana-500/10 border border-banana-500/20 flex items-center justify-center text-sm font-bold text-banana-500">
@@ -230,32 +234,68 @@ export default function App() {
                 </div>
               </div>
 
-              {/* Focus Area Toggles */}
+              {/* Lock group */}
               <div className="flex flex-col gap-2">
                 <div className="flex items-center justify-between">
-                  <span className="text-dark-400 text-xs">
-                    Fokus-Bereiche
-                    <span className="text-dark-600 ml-1">
-                      {focusAreas.length === 0 ? '— alle Bereiche' : `— ${focusAreas.length} ausgewählt`}
-                    </span>
+                  <span className="text-dark-400 text-xs font-medium">
+                    🔒 Was gleich bleiben soll
                   </span>
-                  {focusAreas.length > 0 && (
-                    <button
-                      onClick={() => setFocusAreas([])}
-                      className="text-dark-500 hover:text-dark-300 text-xs transition-colors"
-                    >
+                  {lockAreas.length > 0 && (
+                    <button onClick={() => setLockAreas([])} className="text-dark-500 hover:text-dark-300 text-xs transition-colors">
                       leeren
                     </button>
                   )}
                 </div>
                 <div className="flex flex-wrap gap-1.5">
-                  {FOCUS_AREAS.map((area) => {
-                    const active = focusAreas.includes(area.id)
+                  {LOCK_AREAS.map((area) => {
+                    const active = lockAreas.includes(area.id)
                     return (
                       <button
                         key={area.id}
                         title={area.hint}
-                        onClick={() => toggleFocus(area.id)}
+                        onClick={() => toggleLock(area.id)}
+                        disabled={analysisStatus === 'analyzing'}
+                        className={`
+                          flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg border text-xs font-medium
+                          transition-all duration-150 select-none
+                          ${active
+                            ? 'border-blue-400/60 bg-blue-500/10 text-blue-300'
+                            : 'border-[#2a2a2a] text-dark-400 hover:border-[#3a3a3a] hover:text-dark-300'
+                          }
+                          disabled:opacity-40 disabled:cursor-not-allowed
+                        `}
+                      >
+                        <span className="text-sm leading-none">{area.icon}</span>
+                        {area.label}
+                      </button>
+                    )
+                  })}
+                </div>
+              </div>
+
+              {/* Divider */}
+              <div className="border-t border-[#1e1e1e]" />
+
+              {/* Change group */}
+              <div className="flex flex-col gap-2">
+                <div className="flex items-center justify-between">
+                  <span className="text-dark-400 text-xs font-medium">
+                    ✏️ Was sich ändern soll
+                  </span>
+                  {changeAreas.length > 0 && (
+                    <button onClick={() => setChangeAreas([])} className="text-dark-500 hover:text-dark-300 text-xs transition-colors">
+                      leeren
+                    </button>
+                  )}
+                </div>
+                <div className="flex flex-wrap gap-1.5">
+                  {CHANGE_AREAS.map((area) => {
+                    const active = changeAreas.includes(area.id)
+                    return (
+                      <button
+                        key={area.id}
+                        title={area.hint}
+                        onClick={() => toggleChange(area.id)}
                         disabled={analysisStatus === 'analyzing'}
                         className={`
                           flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg border text-xs font-medium
