@@ -8,36 +8,18 @@ interface Props {
   images: UploadedImage[]
 }
 
-async function toClipboard(prompt: string, images: UploadedImage[]) {
-  const textBlob = new Blob([prompt], { type: 'text/plain' })
-
-  // Try to include the first image as PNG alongside the text
-  if (images.length > 0 && 'ClipboardItem' in window) {
-    try {
-      const bmp = await createImageBitmap(images[0].file)
-      const canvas = document.createElement('canvas')
-      canvas.width = bmp.width
-      canvas.height = bmp.height
-      canvas.getContext('2d')!.drawImage(bmp, 0, 0)
-      const pngBlob = await new Promise<Blob>((res) =>
-        canvas.toBlob((b) => res(b!), 'image/png'),
-      )
-      await navigator.clipboard.write([
-        new ClipboardItem({ 'text/plain': textBlob, 'image/png': pngBlob }),
-      ])
-      return 'both' // prompt + image
-    } catch {
-      // Browser blocked image write (e.g. Firefox) — fall through to text-only
-    }
-  }
-
-  await navigator.clipboard.writeText(prompt)
-  return 'text'
+function downloadImage(file: File) {
+  const url = URL.createObjectURL(file)
+  const a = document.createElement('a')
+  a.href = url
+  a.download = file.name || 'referenz.jpg'
+  a.click()
+  URL.revokeObjectURL(url)
 }
 
 export default function PromptDisplay({ prompt, onChange, status, images }: Props) {
   const textareaRef = useRef<HTMLTextAreaElement>(null)
-  const [copyState, setCopyState] = useState<'idle' | 'both' | 'text'>('idle')
+  const [copyState, setCopyState] = useState<'idle' | 'done'>('idle')
 
   // Auto-resize textarea
   useEffect(() => {
@@ -55,12 +37,16 @@ export default function PromptDisplay({ prompt, onChange, status, images }: Prop
   }, [prompt, status])
 
   const handleCopy = async () => {
-    const result = await toClipboard(prompt, images)
-    setCopyState(result)
-    setTimeout(() => setCopyState('idle'), 2200)
+    // Copy prompt text to clipboard (reliable across all browsers)
+    await navigator.clipboard.writeText(prompt)
+    // Download images so user has them ready to upload into Nano Banana
+    images.forEach((img) => downloadImage(img.file))
+    setCopyState('done')
+    setTimeout(() => setCopyState('idle'), 2500)
   }
 
   const isEmpty = !prompt.trim()
+  const hasImages = images.length > 0
 
   return (
     <div className="flex flex-col gap-4 flex-1 min-h-0">
@@ -109,18 +95,18 @@ export default function PromptDisplay({ prompt, onChange, status, images }: Prop
               onClick={handleCopy}
               className={`
                 flex items-center gap-2 px-5 py-2.5 rounded-xl font-semibold text-sm transition-all duration-200
-                ${copyState !== 'idle'
+                ${copyState === 'done'
                   ? 'bg-green-500/20 border border-green-500/40 text-green-400'
                   : 'bg-banana-500 hover:bg-banana-400 text-black'
                 }
               `}
             >
-              {copyState !== 'idle' ? (
+              {copyState === 'done' ? (
                 <>
                   <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                     <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" />
                   </svg>
-                  {copyState === 'both' ? 'Prompt + Bild kopiert!' : 'Prompt kopiert!'}
+                  {hasImages ? 'Prompt kopiert · Bild gespeichert!' : 'Prompt kopiert!'}
                 </>
               ) : (
                 <>
@@ -128,12 +114,19 @@ export default function PromptDisplay({ prompt, onChange, status, images }: Prop
                     <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2}
                       d="M8 16H6a2 2 0 01-2-2V6a2 2 0 012-2h8a2 2 0 012 2v2m-6 12h8a2 2 0 002-2v-8a2 2 0 00-2-2h-8a2 2 0 00-2 2v8a2 2 0 002 2z" />
                   </svg>
-                  {images.length > 0 ? 'Prompt + Bild kopieren' : 'Prompt kopieren'}
+                  {hasImages ? 'Prompt kopieren + Bild speichern' : 'Prompt kopieren'}
                 </>
               )}
             </button>
           </div>
         </div>
+      )}
+
+      {/* Info hint shown after copy */}
+      {copyState === 'done' && hasImages && (
+        <p className="text-dark-500 text-xs text-right animate-fade-in">
+          Prompt in der Zwischenablage · Bild wurde heruntergeladen — beides in Nano Banana einfügen
+        </p>
       )}
     </div>
   )
