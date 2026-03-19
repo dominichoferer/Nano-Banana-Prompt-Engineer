@@ -1,7 +1,8 @@
 import { useState, useCallback } from 'react'
 import ImageUploader from './components/ImageUploader'
 import PromptDisplay from './components/PromptDisplay'
-import type { UploadedImage, AnalysisStatus, PromptMode, FocusArea } from './types'
+import GeneratedImage from './components/GeneratedImage'
+import type { UploadedImage, AnalysisStatus, GenerationStatus, PromptMode, FocusArea } from './types'
 import { LOCK_AREAS, CHANGE_AREAS } from './types'
 
 // Compress image to max 1600px longest side, JPEG 85% — keeps payload under Vercel's 4.5MB limit
@@ -40,6 +41,11 @@ export default function App() {
   const [prompt, setPrompt] = useState('')
   const [analysisStatus, setAnalysisStatus] = useState<AnalysisStatus>('idle')
   const [analysisError, setAnalysisError] = useState<string | null>(null)
+
+  const [generationStatus, setGenerationStatus] = useState<GenerationStatus>('idle')
+  const [generationError, setGenerationError] = useState<string | null>(null)
+  const [generatedImage, setGeneratedImage] = useState<string | null>(null)
+  const [generatedModel, setGeneratedModel] = useState<string | undefined>(undefined)
 
   const handleAnalyze = useCallback(async () => {
     if (images.length === 0) return
@@ -105,6 +111,36 @@ export default function App() {
     }
   }, [images, userDescription, promptMode, lockAreas, changeAreas])
 
+  const handleGenerate = useCallback(async () => {
+    if (!prompt.trim()) return
+
+    setGenerationStatus('generating')
+    setGenerationError(null)
+    setGeneratedImage(null)
+
+    try {
+      const response = await fetch('/api/generate', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ prompt: prompt.trim() }),
+      })
+
+      if (!response.ok) {
+        const err = await response.json().catch(() => ({ error: response.statusText }))
+        throw new Error(err.error || `Server error: ${response.status}`)
+      }
+
+      const data = await response.json()
+      setGeneratedImage(data.image)
+      setGeneratedModel(data.model)
+      setGenerationStatus('done')
+    } catch (err) {
+      const message = err instanceof Error ? err.message : 'Generation failed'
+      setGenerationError(message)
+      setGenerationStatus('error')
+    }
+  }, [prompt])
+
   const toggleLock = useCallback((area: FocusArea) => {
     setLockAreas((prev) => prev.includes(area) ? prev.filter((a) => a !== area) : [...prev, area])
   }, [])
@@ -114,6 +150,7 @@ export default function App() {
   }, [])
 
   const canAnalyze = images.length > 0 && analysisStatus !== 'analyzing'
+  const canGenerate = prompt.trim().length > 0 && generationStatus !== 'generating'
 
   return (
     <div className="min-h-screen flex flex-col bg-[#0a0a0a]">
@@ -360,7 +397,7 @@ export default function App() {
               {/* Hint */}
               <div className="bg-[#1a1a1a] border border-[#2a2a2a] rounded-xl p-3">
                 <p className="text-dark-400 text-xs leading-relaxed">
-                  <span className="text-banana-500 font-semibold">Claude claude-opus-4-6</span> analysiert deine
+                  <span className="text-banana-500 font-semibold">Claude Opus</span> analysiert deine
                   Referenzbilder und erstellt einen strukturierten, detaillierten Prompt — direkt bereit für{' '}
                   <span className="text-white font-medium">Nano Banana Pro</span> oder jedes andere KI-Bildtool.
                 </p>
@@ -368,51 +405,109 @@ export default function App() {
             </div>
           </div>
 
-          {/* ── Right Panel: Generated Prompt (3/5) ────────────────────────── */}
-          <div className="lg:col-span-3 glass-card p-6 flex flex-col gap-5" style={{ minHeight: '600px' }}>
-            <div className="flex items-center justify-between">
-              <div>
-                <span className="section-label">Schritt 3</span>
-                <h2 className="text-white font-semibold mt-0.5">Generierter Prompt</h2>
-              </div>
-              <div className="flex items-center gap-2">
-                {analysisStatus === 'done' && (
-                  <span className="text-xs text-green-400 bg-green-500/10 border border-green-500/20 px-2 py-1 rounded-lg animate-fade-in">
-                    Bereit zum Einfügen
-                  </span>
-                )}
-                <div className="w-8 h-8 rounded-xl bg-banana-500/10 border border-banana-500/20 flex items-center justify-center text-sm font-bold text-banana-500">
-                  3
+          {/* ── Right Panel: Prompt + Image Generation (3/5) ────────────────── */}
+          <div className="lg:col-span-3 flex flex-col gap-5">
+
+            {/* Prompt Display */}
+            <div className="glass-card p-6 flex flex-col gap-5" style={{ minHeight: '400px' }}>
+              <div className="flex items-center justify-between">
+                <div>
+                  <span className="section-label">Schritt 3</span>
+                  <h2 className="text-white font-semibold mt-0.5">Generierter Prompt</h2>
+                </div>
+                <div className="flex items-center gap-2">
+                  {analysisStatus === 'done' && (
+                    <span className="text-xs text-green-400 bg-green-500/10 border border-green-500/20 px-2 py-1 rounded-lg animate-fade-in">
+                      Bereit zum Einfügen
+                    </span>
+                  )}
+                  <div className="w-8 h-8 rounded-xl bg-banana-500/10 border border-banana-500/20 flex items-center justify-center text-sm font-bold text-banana-500">
+                    3
+                  </div>
                 </div>
               </div>
+
+              <PromptDisplay
+                prompt={prompt}
+                onChange={setPrompt}
+                status={analysisStatus}
+                images={images}
+              />
             </div>
 
-            <PromptDisplay
-              prompt={prompt}
-              onChange={setPrompt}
-              status={analysisStatus}
-              images={images}
-            />
+            {/* Image Generation */}
+            <div className="glass-card p-6 flex flex-col gap-5">
+              <div className="flex items-center justify-between">
+                <div>
+                  <span className="section-label">Schritt 4</span>
+                  <h2 className="text-white font-semibold mt-0.5">Bild generieren</h2>
+                </div>
+                <div className="w-8 h-8 rounded-xl bg-banana-500/10 border border-banana-500/20 flex items-center justify-center text-sm font-bold text-banana-500">
+                  4
+                </div>
+              </div>
+
+              <GeneratedImage
+                imageDataUrl={generatedImage}
+                status={generationStatus}
+                error={generationError}
+                prompt={prompt}
+                activeModel={generatedModel}
+              />
+
+              <button
+                onClick={handleGenerate}
+                disabled={!canGenerate}
+                className="btn-primary w-full justify-center py-4 text-sm font-semibold"
+              >
+                {generationStatus === 'generating' ? (
+                  <>
+                    <svg className="w-4 h-4 animate-spin" fill="none" viewBox="0 0 24 24">
+                      <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
+                      <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z" />
+                    </svg>
+                    Gemini generiert…
+                  </>
+                ) : (
+                  <>
+                    <span>🎨</span>
+                    Bild generieren (Gemini)
+                  </>
+                )}
+              </button>
+
+              {generationStatus === 'error' && generationError && (
+                <div className="bg-red-500/10 border border-red-500/30 rounded-xl p-3">
+                  <p className="text-red-400 text-xs font-medium">Fehler</p>
+                  <p className="text-red-300/80 text-xs mt-1 leading-relaxed">{generationError}</p>
+                </div>
+              )}
+            </div>
           </div>
         </div>
 
         {/* ── How it works ─────────────────────────────────────────────────── */}
-        <div className="mt-8 grid grid-cols-1 md:grid-cols-3 gap-4">
+        <div className="mt-8 grid grid-cols-1 md:grid-cols-4 gap-4">
           {[
             {
               icon: '🖼️',
               title: 'Referenzbild hochladen',
-              desc: 'Lade das Foto hoch, das du retuschieren oder als Stil-Referenz verwenden möchtest. Mehrere Bilder werden unterstützt.',
+              desc: 'Lade das Foto hoch, das du retuschieren oder als Stil-Referenz verwenden möchtest.',
             },
             {
               icon: '🧠',
               title: 'Beschreibe, was du möchtest',
-              desc: 'Sag Claude, was korrigiert, geändert oder generiert werden soll. Hintergrund, Licht, Pose, Stil — so genau wie du willst.',
+              desc: 'Sag Claude, was korrigiert, geändert oder generiert werden soll.',
             },
             {
               icon: '📋',
-              title: 'Kopieren & in Nano Banana einfügen',
-              desc: 'Claude erstellt einen strukturierten Prompt mit Face-Lock, Beleuchtungsangaben und Farbgebung — Prompt und Bild werden zusammen kopiert.',
+              title: 'Prompt kopieren',
+              desc: 'Claude erstellt einen strukturierten Prompt mit Face-Lock, Beleuchtung und Farbgebung.',
+            },
+            {
+              icon: '🎨',
+              title: 'Bild generieren',
+              desc: 'Den Prompt direkt mit Gemini in ein Bild umwandeln — oder in Nano Banana Pro einfügen.',
             },
           ].map((step) => (
             <div key={step.title} className="bg-[#141414] border border-[#1e1e1e] rounded-2xl p-5 flex gap-4">
@@ -430,7 +525,7 @@ export default function App() {
       <footer className="border-t border-[#1e1e1e] mt-8">
         <div className="max-w-[1400px] mx-auto px-6 py-4 flex items-center justify-between">
           <p className="text-dark-500 text-xs">🍌 Nano Banana Prompt Engineer</p>
-          <p className="text-dark-600 text-xs">Betrieben von Claude claude-opus-4-6 Vision</p>
+          <p className="text-dark-600 text-xs">Claude Opus Vision · Gemini 2.0 Flash</p>
         </div>
       </footer>
     </div>

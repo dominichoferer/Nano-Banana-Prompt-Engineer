@@ -137,13 +137,27 @@ function buildUserMessage(
   lockAreas?: string[],
   changeAreas?: string[],
 ): string {
-  const isRetouch = promptMode !== 'generation'
+  const isGeneration = promptMode === 'generation'
   const imageRef = count > 1 ? `these ${count} reference images` : 'this reference image'
   const hasLock = (lockAreas?.length ?? 0) > 0
   const hasChange = (changeAreas?.length ?? 0) > 0
   const hasSelections = hasLock || hasChange
 
-  // ── Case: nothing selected → lean prompt from user text only ──────────────
+  // ── Generation mode — use image as style reference ─────────────────────────
+  if (isGeneration) {
+    const subject = userDescription?.trim()
+      ? `\n\nGenerate the following subject using the visual style of the reference:\n"${userDescription.trim()}"`
+      : `\n\nExtract the complete visual identity and generate a new image in the same style.`
+    return `USE THE UPLOADED PHOTO AS VISUAL STYLE REFERENCE.
+THIS IS A NEW IMAGE GENERATION INSPIRED BY THE REFERENCE.
+${subject}
+
+Analyze ${imageRef}: extract art style, color palette, lighting, mood, composition, texture and rendering technique.
+Then generate a structured prompt that recreates those visual characteristics for the new subject.
+Start directly with the header line — no preamble.`
+  }
+
+  // ── Retouch mode, nothing selected → lean prompt from user text only ───────
   if (!hasSelections) {
     const instruction = userDescription?.trim()
       ? `Apply ONLY the following change — everything else stays exactly as in the reference:\n"${userDescription.trim()}"`
@@ -158,7 +172,7 @@ Include only the header line, the specific change instructions, and OUTPUT SPECS
 Start directly with the header line — no preamble.`
   }
 
-  // ── Case: selections made → targeted structured prompt ────────────────────
+  // ── Retouch mode, selections made → targeted structured prompt ────────────
   const allAreas = [...(lockAreas ?? []), ...(changeAreas ?? [])]
 
   const lockBlock = hasLock
@@ -222,8 +236,6 @@ app.post('/api/analyze', upload.array('images', 10), async (req: Request, res: R
     const stream = client.messages.stream({
       model: 'claude-opus-4-6',
       max_tokens: 4096,
-      // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      thinking: { type: 'adaptive' } as any,
       system: SYSTEM_PROMPT,
       messages: [
         {
@@ -257,6 +269,71 @@ app.post('/api/analyze', upload.array('images', 10), async (req: Request, res: R
     } else {
       res.status(500).json({ error: message })
     }
+  }
+})
+
+// ── Generate endpoint (Gemini image generation) ─────────────────────────────
+
+interface GeminiResponse {
+  candidates?: Array<{
+    content?: { parts?: Array<{ text?: string; inlineData?: { mimeType: string; data: string } }> }
+  }>
+  error?: { message: string; code: number }
+}
+
+const SUPPORTED_API_RATIOS = new Set(['1:1', '16:9', '9:16', '4:3', '3:4'])
+
+const RESOLUTION_CONFIG: Record<string, { hint: string }> = {
+  '1K': { hint: 'high quality, 1024px' },
+  '2K': { hint: 'ultra high quality, 2K, 2048px' },
+  '4K': { hint: 'ultra HD, 4K, 4096px, hyper-detailed, maximum quality, ultra sharp' },
+}
+
+app.post('/api/generate', async (req: Request, res: Response) => {
+  try {
+    const { prompt, aspectRatio, resolution } = req.body as {
+      prompt: string
+      aspectRatio?: string
+      resolution?: string
+    }
+    if (!prompt?.trim()) return res.status(400).json({ error: 'Prompt is required' })
+    if (!process.env.GOOGLE_AI_API_KEY) return res.status(500).json({ error: 'GOOGLE_AI_API_KEY not configured' })
+
+    const apiKey = process.env.GOOGLE_AI_API_KEY
+    const resHint = resolution ? `, ${RESOLUTION_CONFIG[resolution]?.hint ?? ''}` : ''
+    const nativeRatio = aspectRatio && SUPPORTED_API_RATIOS.has(aspectRatio)
+    const ratioHint = aspectRatio && !nativeRatio ? `, ${aspectRatio} aspect ratio` : ''
+    const p = `${prompt.trim()}${ratioHint}${resHint}`.trim()
+
+    const imageGenerationConfig: Record<string, string> = {}
+    if (nativeRatio && aspectRatio) imageGenerationConfig.aspectRatio = aspectRatio
+
+    const url = `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash-preview-image-generation:generateContent?key=${apiKey}`
+    const fetchRes = await fetch(url, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        contents: [{ parts: [{ text: p }] }],
+        generationConfig: {
+          responseModalities: ['IMAGE', 'TEXT'],
+          ...(Object.keys(imageGenerationConfig).length > 0 ? { imageGenerationConfig } : {}),
+        },
+      }),
+    })
+    const data = await fetchRes.json() as GeminiResponse
+    if (!fetchRes.ok) throw new Error(data.error?.message || `Gemini error ${fetchRes.status}`)
+
+    const parts = data.candidates?.[0]?.content?.parts ?? []
+    const img = parts.find((part) => part.inlineData?.mimeType?.startsWith('image/'))
+    if (!img?.inlineData) throw new Error('No image returned from Gemini')
+
+    res.json({
+      image: `data:${img.inlineData.mimeType};base64,${img.inlineData.data}`,
+      prompt: p,
+      model: 'Gemini 2.0 Flash',
+    })
+  } catch (err) {
+    res.status(500).json({ error: err instanceof Error ? err.message : 'Unknown error' })
   }
 })
 

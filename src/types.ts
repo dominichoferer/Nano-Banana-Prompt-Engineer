@@ -8,6 +8,8 @@ export interface UploadedImage {
 
 export type AnalysisStatus = 'idle' | 'analyzing' | 'done' | 'error'
 
+export type GenerationStatus = 'idle' | 'generating' | 'done' | 'error'
+
 export type PromptMode = 'retouch' | 'generation'
 
 export type FocusArea =

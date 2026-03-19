@@ -43,7 +43,7 @@ export async function generateImage(req: Request, res: Response) {
     const imageGenerationConfig: Record<string, string> = {}
     if (nativeRatio && aspectRatio) imageGenerationConfig.aspectRatio = aspectRatio
 
-    const url = `https://generativelanguage.googleapis.com/v1beta/models/gemini-3-pro-image-preview:generateContent?key=${apiKey}`
+    const url = `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash-preview-image-generation:generateContent?key=${apiKey}`
     const fetchRes = await fetch(url, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
