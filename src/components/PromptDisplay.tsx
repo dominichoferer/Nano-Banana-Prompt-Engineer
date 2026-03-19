@@ -82,10 +82,11 @@ export default function PromptDisplay({ prompt, onChange, status, images }: Prop
           }
           className={`
             w-full min-h-[420px] resize-none rounded-2xl
-            bg-[#111] border border-[#2a2a2a] text-white
+            bg-cream-50 border border-cream-200 text-ink-900
             font-mono text-xs leading-relaxed p-4
-            focus:outline-none focus:border-banana-500/40
-            placeholder:text-dark-500 whitespace-pre
+            focus:outline-none focus:border-banana-400 focus:ring-2 focus:ring-banana-200
+            placeholder:text-ink-300 whitespace-pre shadow-card
+            transition-all duration-200
             ${status === 'analyzing' ? 'typing-cursor' : ''}
           `}
           readOnly={status === 'analyzing'}
@@ -93,29 +94,28 @@ export default function PromptDisplay({ prompt, onChange, status, images }: Prop
         />
 
         {status === 'analyzing' && (
-          <div className="absolute top-3 right-3 flex items-center gap-1.5 bg-[#0a0a0a]/90 px-2.5 py-1.5 rounded-lg border border-banana-500/30">
+          <div className="absolute top-3 right-3 flex items-center gap-1.5 bg-white/90 px-2.5 py-1.5 rounded-lg border border-banana-200 shadow-card">
             <div className="w-1.5 h-1.5 rounded-full bg-banana-500 animate-pulse" />
-            <span className="text-banana-400 text-xs font-medium">Claude schreibt…</span>
+            <span className="text-banana-600 text-xs font-medium">Claude schreibt…</span>
           </div>
         )}
       </div>
 
       {!isEmpty && status !== 'analyzing' && (
         <div className="flex items-center justify-between animate-fade-in">
-          <span className="text-dark-500 text-xs">
+          <span className="text-ink-400 text-xs">
             {prompt.length.toLocaleString('de')} Zeichen · {prompt.split('\n').length} Zeilen
           </span>
 
           <div className="flex gap-2">
-            {/* Image copy — only shown when images are present */}
             {hasImages && (
               <button
                 onClick={handleCopyImage}
                 className={`
                   flex items-center gap-2 px-4 py-2.5 rounded-xl font-semibold text-sm transition-all duration-200
                   ${imageCopied
-                    ? 'bg-green-500/20 border border-green-500/40 text-green-400'
-                    : 'border border-[#3a3a3a] text-dark-300 hover:border-[#4a4a4a] hover:text-white'
+                    ? 'bg-green-50 border border-green-300 text-green-700'
+                    : 'btn-secondary'
                   }
                 `}
               >
@@ -124,14 +124,13 @@ export default function PromptDisplay({ prompt, onChange, status, images }: Prop
               </button>
             )}
 
-            {/* Prompt copy — primary CTA */}
             <button
               onClick={handleCopyPrompt}
               className={`
                 flex items-center gap-2 px-5 py-2.5 rounded-xl font-semibold text-sm transition-all duration-200
                 ${promptCopied
-                  ? 'bg-green-500/20 border border-green-500/40 text-green-400'
-                  : 'bg-banana-500 hover:bg-banana-400 text-black'
+                  ? 'bg-green-50 border border-green-300 text-green-700'
+                  : 'btn-primary'
                 }
               `}
             >

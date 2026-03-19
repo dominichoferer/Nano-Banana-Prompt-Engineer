@@ -14,6 +14,9 @@ function createUploadedImage(file: File): UploadedImage {
     preview: URL.createObjectURL(file),
     name: file.name,
     size: file.size,
+    faceLock: false,
+    objectLock: false,
+    customLock: '',
   }
 }
 

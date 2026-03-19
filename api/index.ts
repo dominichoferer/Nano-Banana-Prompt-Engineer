@@ -29,9 +29,16 @@ OUTPUT FORMAT RULES
 ═══════════════════════════════════════════
 
 1. HEADER LINE
-   Start with a clear declaration of the job type:
-   — PHOTO RETOUCH: "USE THE UPLOADED PHOTO AS STRICT REFERENCE BASE.\nTHIS IS A PHOTO RETOUCH — NOT A NEW IMAGE GENERATION."
-   — NEW GENERATION: "USE THE UPLOADED PHOTO AS VISUAL STYLE REFERENCE.\nTHIS IS A NEW IMAGE GENERATION INSPIRED BY THE REFERENCE."
+   Start with a clear declaration of the job type AND a reference index:
+   — PHOTO RETOUCH: "USE THE UPLOADED PHOTO(S) AS STRICT REFERENCE BASE.\nTHIS IS A PHOTO RETOUCH — NOT A NEW IMAGE GENERATION."
+   — NEW GENERATION: "USE THE UPLOADED PHOTO(S) AS VISUAL STYLE REFERENCE.\nTHIS IS A NEW IMAGE GENERATION INSPIRED BY THE REFERENCE(S)."
+
+   If multiple images are provided, always add an IMAGE INDEX section directly after the header:
+   IMAGE INDEX
+   ═══════════════════════════════════════════
+   — IMAGE 1 — [filename]: [brief 1-line description of what is in this image]
+   — IMAGE 2 — [filename]: [brief 1-line description]
+   (This tells the downstream AI tool which image number is which.)
 
 2. USE ═══════════════════════════════════════════ as section dividers (exactly this length)
 
@@ -39,6 +46,7 @@ OUTPUT FORMAT RULES
    Format:
    📐 SUBJECT LOCK — PROPORTIONS & COMPOSITION ⚠️
    ═══════════════════════════════════════════
+   Specify which IMAGE number this applies to.
    Describe EXACTLY: overall dimensions and aspect ratio, body/object silhouette, spatial position in frame, structural features that must not change.
    End with: "Do NOT alter the proportions, silhouette, or overall composition of the main subject."
 
@@ -46,12 +54,13 @@ OUTPUT FORMAT RULES
    Format:
    ⚠️ FACE LOCK — ABSOLUTE PRIORITY RULE ⚠️
    ═══════════════════════════════════════════
+   Specify which IMAGE number each person comes from (e.g., "PERSON from IMAGE 1 — left side:").
    Then list pixel-perfect preservation rules for EACH person detected.
    Describe EXACTLY: facial contours, eye shape/color/spacing, nose, lips, skin tone, skin texture, hair (color, highlights, texture, how it falls), age appearance, eyebrows.
    End with: "If the faces are not 100% identical to the reference, the result is wrong."
 
 5. SUBJECT DESCRIPTIONS
-   For each person use: PERSON NAME or POSITION (left/right/center)
+   For each person use: PERSON NAME or POSITION (left/right/center) + which IMAGE they come from
    Describe: hair, skin tone, clothing (every item with color, material, brand if visible), accessories, shoes.
    End each person's section with: "FACE UNCHANGED."
 
@@ -81,6 +90,7 @@ OUTPUT FORMAT RULES
 
 9. BACKGROUND
    Describe exact background replacement or enhancement.
+   If background comes from a specific image, reference it: "USE BACKGROUND FROM IMAGE 2 exactly as captured."
    Include: shadows, reflections, environment details.
 
 10. OUTPUT SPECS
@@ -88,6 +98,7 @@ OUTPUT FORMAT RULES
 
 11. FINAL ENFORCEMENT RULE
     One clear, strong closing rule that reinforces the most critical requirement.
+    Always end with the image index reminder: "When in doubt, refer to IMAGE 1/2/3 as indexed above."
 
 ═══════════════════════════════════════════
 WRITING STYLE RULES
@@ -98,19 +109,18 @@ WRITING STYLE RULES
 — Be exhaustively specific — real camera brands, real measurement values, real publication names
 — Never use vague terms — replace "good lighting" with "large octabox softbox positioned 45° camera-left"
 — All prompts must be in English
-— Do NOT add explanations, preamble, or commentary — output the prompt directly`
+— Do NOT add explanations, preamble, or commentary — output the prompt directly
+— ALWAYS reference images by their number (IMAGE 1, IMAGE 2, etc.) throughout the prompt`
 
 // ── User template ───────────────────────────────────────────────────────────
 
-// What to LOCK (preserve exactly) per area
-const LOCK_MAP: Record<string, string> = {
-  subject:  'SUBJECT LOCK section — preserve exact proportions, silhouette, shape and overall composition; no morphing, resizing, or restructuring',
-  face:     'FACE LOCK section — pixel-perfect facial feature preservation for every person present',
-  skin:     'SKIN LOCK section — preserve exact skin tone, texture, pores, body characteristics unchanged',
-  clothing: 'CLOTHING LOCK section — preserve every clothing item, color, material, fit and accessories exactly',
+interface ImageSetting {
+  name: string
+  faceLock: boolean
+  objectLock: boolean
+  customLock: string
 }
 
-// What to CHANGE per area
 const CHANGE_MAP: Record<string, string> = {
   pose:       'POSE & POSITIONING section — required body alignment, spacing, angles, expression corrections',
   lighting:   'LIGHTING section — camera specs, key/fill/rim lights, catchlights, required improvements',
@@ -118,84 +128,127 @@ const CHANGE_MAP: Record<string, string> = {
   background: 'BACKGROUND section — exact replacement or enhancement description',
 }
 
-// What to extract from the image per area (analysis checklist)
-const ANALYSIS_MAP: Record<string, string> = {
-  subject:    'Overall proportions, silhouette, shape and spatial composition of the main subject',
-  face:       'Facial features of every person (shape, color, texture, hair, eyebrows)',
-  skin:       'Skin tone, texture quality, body characteristics',
-  clothing:   'All clothing items, colors, materials, fit, accessories, footwear',
-  pose:       'Body alignment, spacing, posture, angles, hand/arm positions, expressions',
-  lighting:   'Lighting quality, direction, shadows, catchlights',
-  color:      'Color grading, tone, warmth/coolness, contrast',
-  background: 'Background content and what needs to change',
+function buildImageIndex(settings: ImageSetting[]): string {
+  return settings.map((s, i) => `— IMAGE ${i + 1} — "${s.name}"`).join('\n')
+}
+
+function buildPerImageLocks(settings: ImageSetting[]): string {
+  const blocks: string[] = []
+  settings.forEach((s, i) => {
+    const num = i + 1
+    const lines: string[] = []
+    if (s.faceLock) {
+      lines.push(
+        `— ⚠️ FACE LOCK (IMAGE ${num}): Preserve ALL facial features with pixel-perfect accuracy — ` +
+        `face shape, eye color/shape/spacing, nose bridge, lip shape/thickness, skin tone, ` +
+        `skin texture/pores, hair color/highlights/texture/fall, eyebrows shape/color, age appearance. ` +
+        `DO NOT alter a single facial feature from IMAGE ${num}.`,
+      )
+    }
+    if (s.objectLock) {
+      lines.push(
+        `— ⚠️ OBJECT/PROPORTION LOCK (IMAGE ${num}): Preserve exact silhouette, body proportions, ` +
+        `spatial positioning in frame, and overall composition from IMAGE ${num}. ` +
+        `DO NOT resize, morph, recompose, or restructure the subject.`,
+      )
+    }
+    if (s.customLock) {
+      lines.push(
+        `— 🔒 CUSTOM LOCK (IMAGE ${num}): Preserve EXACTLY — "${s.customLock}". ` +
+        `This element must appear in the output identical to IMAGE ${num}. No exceptions.`,
+      )
+    }
+    if (lines.length > 0) {
+      blocks.push(`IMAGE ${num} — "${s.name}":\n${lines.join('\n')}`)
+    }
+  })
+  return blocks.join('\n\n')
 }
 
 function buildUserMessage(
-  count: number,
+  imageSettings: ImageSetting[],
   userDescription?: string,
   promptMode?: string,
-  lockAreas?: string[],
   changeAreas?: string[],
 ): string {
+  const count = imageSettings.length
   const isGeneration = promptMode === 'generation'
-  const imageRef = count > 1 ? `these ${count} reference images` : 'this reference image'
-  const hasLock = (lockAreas?.length ?? 0) > 0
   const hasChange = (changeAreas?.length ?? 0) > 0
-  const hasSelections = hasLock || hasChange
+  const imageIndexBlock = buildImageIndex(imageSettings)
+  const perImageLocksBlock = buildPerImageLocks(imageSettings)
+  const hasAnyLocks = imageSettings.some((s) => s.faceLock || s.objectLock || s.customLock)
 
-  // ── Generation mode — use image as style reference ─────────────────────────
-  if (isGeneration) {
-    const subject = userDescription?.trim()
-      ? `\n\nGenerate the following subject using the visual style of the reference:\n"${userDescription.trim()}"`
-      : `\n\nExtract the complete visual identity and generate a new image in the same style.`
-    return `USE THE UPLOADED PHOTO AS VISUAL STYLE REFERENCE.
-THIS IS A NEW IMAGE GENERATION INSPIRED BY THE REFERENCE.
-${subject}
+  const imageRefSection = count > 0
+    ? `═══════════════════════════════════════════
+UPLOADED IMAGES — REFERENCE INDEX
+═══════════════════════════════════════════
+${imageIndexBlock}
 
-Analyze ${imageRef}: extract art style, color palette, lighting, mood, composition, texture and rendering technique.
-Then generate a structured prompt that recreates those visual characteristics for the new subject.
-Start directly with the header line — no preamble.`
-  }
-
-  // ── Retouch mode, nothing selected → lean prompt from user text only ───────
-  if (!hasSelections) {
-    const instruction = userDescription?.trim()
-      ? `Apply ONLY the following change — everything else stays exactly as in the reference:\n"${userDescription.trim()}"`
-      : `Perfectly retouch and enhance this image while preserving every detail of the original.`
-    return `USE THE UPLOADED PHOTO AS STRICT REFERENCE BASE.
-THIS IS A PHOTO RETOUCH — NOT A NEW IMAGE GENERATION.
-
-${instruction}
-
-Analyze ${imageRef} and generate a concise, targeted structured prompt.
-Include only the header line, the specific change instructions, and OUTPUT SPECS.
-Start directly with the header line — no preamble.`
-  }
-
-  // ── Retouch mode, selections made → targeted structured prompt ────────────
-  const allAreas = [...(lockAreas ?? []), ...(changeAreas ?? [])]
-
-  const lockBlock = hasLock
-    ? `\n\n🔒 LOCK — Preserve these sections EXACTLY from the reference:\n${lockAreas!.map((f) => `— ${LOCK_MAP[f] ?? f}`).join('\n')}`
+The images are attached above in this EXACT ORDER (IMAGE 1 = first attached image, IMAGE 2 = second, etc.).
+When you reference a subject, face, background, or any element in the prompt — ALWAYS specify which IMAGE number it comes from.`
     : ''
 
-  const changeBlock = hasChange
-    ? `\n\n✏️ CHANGE — Only modify these sections (incorporate user intent below):\n${changeAreas!.map((f) => `— ${CHANGE_MAP[f] ?? f}`).join('\n')}`
+  if (isGeneration) {
+    const subject = userDescription?.trim()
+      ? `Generate the following subject/scene:\n"${userDescription.trim()}"`
+      : `Generate an original creative image.`
+
+    const refBlock = count > 0
+      ? `\n\n${imageRefSection}\n\nAnalyze all ${count} image(s): extract art style, color palette, lighting, mood, composition, texture and rendering technique from each.\nSpecify in the prompt which visual elements come from which IMAGE number.`
+      : ''
+
+    return `THIS IS A NEW IMAGE GENERATION — CREATE FROM SCRATCH based on the description below.${refBlock}
+
+${subject}
+
+Generate a highly detailed, structured prompt for AI image generation.
+Be specific about: subject, style, lighting, color palette, mood, composition, camera settings, post-processing.
+Start directly with the header line — no preamble.`
+  }
+
+  const locksSection = hasAnyLocks
+    ? `\n\n═══════════════════════════════════════════
+PER-IMAGE LOCK RULES — ABSOLUTE PRIORITY
+═══════════════════════════════════════════
+These rules OVERRIDE everything else. Treat them as hard constraints.
+
+${perImageLocksBlock}`
+    : ''
+
+  const changeSection = hasChange
+    ? `\n\n═══════════════════════════════════════════
+GLOBAL CHANGES REQUESTED
+═══════════════════════════════════════════
+✏️ Modify ONLY these aspects (apply globally unless user specifies an image):
+${changeAreas!.map((f) => `— ${CHANGE_MAP[f] ?? f}`).join('\n')}`
     : ''
 
   const userBlock = userDescription?.trim()
-    ? `\n\nUSER'S INTENT:\n"${userDescription.trim()}"`
+    ? `\n\n═══════════════════════════════════════════
+USER'S INTENT
+═══════════════════════════════════════════
+"${userDescription.trim()}"
+
+When the user references "Bild 1" / "Image 1" / "the first image" — this means IMAGE 1 from the index above.
+When the user references "Bild 2" / "Image 2" / "the second image" — this means IMAGE 2, etc.`
     : ''
 
-  const checklistItems = allAreas.map((f) => ANALYSIS_MAP[f] ?? f)
+  const instruction = !hasAnyLocks && !hasChange && !userDescription?.trim()
+    ? `\n\nPerfectly retouch and enhance all images while preserving every detail of the originals.`
+    : ''
 
-  return `Analyze ${imageRef} for a targeted PHOTO RETOUCH job.${lockBlock}${changeBlock}${userBlock}
+  return `USE THE UPLOADED PHOTO(S) AS STRICT REFERENCE BASE.
+THIS IS A PHOTO RETOUCH — NOT A NEW IMAGE GENERATION.
 
-ANALYSIS CHECKLIST — extract these from the reference:
-${checklistItems.map((i) => `— ${i}`).join('\n')}
+${imageRefSection}${locksSection}${changeSection}${userBlock}${instruction}
 
-OUTPUT: Generate the focused structured prompt NOW, following the format from your system instructions.
-Include ONLY the sections listed above (lock + change). Always include the header line and OUTPUT SPECS. Start directly — no preamble.`
+═══════════════════════════════════════════
+TASK
+═══════════════════════════════════════════
+Analyze all ${count} uploaded image(s) carefully, respecting all per-image lock rules above.
+Generate the structured prompt NOW following the format from your system instructions.
+Reference images by their IMAGE NUMBER (IMAGE 1, IMAGE 2, etc.) throughout every section of the prompt.
+Start directly with the header line — no preamble.`
 }
 
 // ── Analyze endpoint ────────────────────────────────────────────────────────
@@ -205,14 +258,30 @@ app.post('/api/analyze', upload.array('images', 10), async (req: Request, res: R
     const files = req.files as Express.Multer.File[]
     const userDescription = req.body?.userDescription as string | undefined
     const promptMode = req.body?.promptMode as string | undefined
-    const lockAreasRaw = req.body?.lockAreas as string | undefined
     const changeAreasRaw = req.body?.changeAreas as string | undefined
-    const lockAreas = lockAreasRaw ? lockAreasRaw.split(',').filter(Boolean) : []
     const changeAreas = changeAreasRaw ? changeAreasRaw.split(',').filter(Boolean) : []
 
-    if (!files || files.length === 0) {
+    // Parse per-image settings
+    let imageSettings: ImageSetting[] = []
+    try {
+      const raw = req.body?.imageSettings as string | undefined
+      if (raw) imageSettings = JSON.parse(raw)
+    } catch { /* ignore */ }
+
+    if ((!files || files.length === 0) && promptMode !== 'generation') {
       return res.status(400).json({ error: 'No images provided' })
     }
+
+    // Ensure imageSettings aligns with files
+    if (imageSettings.length !== files.length) {
+      imageSettings = files.map((f) => ({
+        name: f.originalname || f.fieldname,
+        faceLock: false,
+        objectLock: false,
+        customLock: '',
+      }))
+    }
+
     if (!process.env.ANTHROPIC_API_KEY) {
       return res.status(500).json({ error: 'ANTHROPIC_API_KEY not configured' })
     }
@@ -244,7 +313,7 @@ app.post('/api/analyze', upload.array('images', 10), async (req: Request, res: R
             ...imageContent,
             {
               type: 'text',
-              text: buildUserMessage(files.length, userDescription, promptMode, lockAreas, changeAreas),
+              text: buildUserMessage(imageSettings, userDescription, promptMode, changeAreas),
             },
           ],
         },

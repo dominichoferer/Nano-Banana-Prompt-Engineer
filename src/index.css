@@ -12,69 +12,136 @@
   }
 
   body {
-    @apply bg-[#0a0a0a] text-white font-sans antialiased;
-    min-height: 100vh;
+    @apply bg-cream-50 text-ink-900 font-sans antialiased;
+    min-height: 100dvh;
   }
 
   ::-webkit-scrollbar {
-    width: 6px;
-    height: 6px;
+    width: 5px;
+    height: 5px;
   }
   ::-webkit-scrollbar-track {
-    @apply bg-[#1a1a1a];
+    @apply bg-cream-100;
   }
   ::-webkit-scrollbar-thumb {
-    @apply bg-[#3a3a3a] rounded-full;
+    @apply bg-cream-300 rounded-full;
   }
   ::-webkit-scrollbar-thumb:hover {
-    @apply bg-banana-500;
+    @apply bg-banana-400;
   }
 }
 
 @layer components {
-  .glass-card {
-    @apply bg-[#141414] border border-[#2a2a2a] rounded-2xl;
-    backdrop-filter: blur(10px);
+
+  /* ── Cards ── */
+  .card {
+    @apply bg-white border border-cream-200 rounded-2xl shadow-card;
   }
 
+  .card-elevated {
+    @apply bg-white border border-cream-200 rounded-2xl shadow-card-hover;
+  }
+
+  /* ── Buttons ── */
   .btn-primary {
-    @apply bg-banana-500 hover:bg-banana-600 text-black font-semibold px-6 py-3 rounded-xl
-           transition-all duration-200 flex items-center gap-2
-           disabled:opacity-40 disabled:cursor-not-allowed disabled:hover:bg-banana-500
-           active:scale-95;
+    @apply relative bg-banana-gradient text-white font-display font-semibold
+           px-6 py-3.5 rounded-xl shadow-banana
+           flex items-center gap-2.5 justify-center
+           transition-all duration-200
+           hover:shadow-banana-lg hover:-translate-y-0.5
+           active:translate-y-0 active:shadow-banana active:scale-[0.98]
+           disabled:opacity-40 disabled:cursor-not-allowed
+           disabled:hover:translate-y-0 disabled:hover:shadow-banana;
+    overflow: hidden;
+  }
+
+  .btn-primary::before {
+    content: '';
+    @apply absolute inset-0 bg-white/10 opacity-0 transition-opacity duration-200;
+  }
+  .btn-primary:hover:not(:disabled)::before {
+    @apply opacity-100;
   }
 
   .btn-secondary {
-    @apply bg-[#2a2a2a] hover:bg-[#3a3a3a] text-white font-medium px-5 py-2.5 rounded-xl
-           border border-[#3a3a3a] hover:border-[#4a4a4a]
-           transition-all duration-200 flex items-center gap-2
-           disabled:opacity-40 disabled:cursor-not-allowed
-           active:scale-95;
+    @apply bg-white text-ink-700 font-sans font-medium
+           px-5 py-3 rounded-xl border border-cream-200 shadow-card
+           flex items-center gap-2 justify-center
+           transition-all duration-200
+           hover:border-banana-300 hover:text-ink-900 hover:shadow-card-hover hover:-translate-y-0.5
+           active:translate-y-0 active:scale-[0.98]
+           disabled:opacity-40 disabled:cursor-not-allowed;
   }
 
   .btn-ghost {
-    @apply text-dark-400 hover:text-white hover:bg-[#2a2a2a] px-3 py-2 rounded-lg
-           transition-all duration-200 flex items-center gap-2
-           active:scale-95;
+    @apply text-ink-500 hover:text-ink-900 hover:bg-cream-100
+           px-3 py-2 rounded-lg font-sans text-sm
+           transition-all duration-150 flex items-center gap-2
+           active:scale-[0.97];
   }
 
+  /* ── Inputs ── */
   .input-field {
-    @apply bg-[#1e1e1e] border border-[#2a2a2a] rounded-xl px-4 py-3
-           text-white placeholder-dark-500
-           focus:outline-none focus:border-banana-500 focus:ring-1 focus:ring-banana-500/30
+    @apply bg-white border border-cream-200 rounded-xl px-4 py-3
+           text-ink-900 placeholder-ink-300 font-sans text-sm
+           shadow-card
+           focus:outline-none focus:border-banana-400 focus:ring-2 focus:ring-banana-200
            transition-all duration-200;
   }
 
-  .section-label {
-    @apply text-xs font-semibold uppercase tracking-widest text-dark-400;
+  /* ── Area Chips ── */
+  .chip {
+    @apply flex items-center gap-1.5 px-3 py-1.5 rounded-lg border text-xs font-sans font-medium
+           transition-all duration-150 select-none cursor-pointer;
   }
 
-  .status-dot {
-    @apply w-2 h-2 rounded-full;
+  .chip-lock {
+    @apply chip border-cream-200 bg-white text-ink-500 shadow-card
+           hover:border-blue-300 hover:text-blue-700 hover:bg-blue-50;
+  }
+  .chip-lock-active {
+    @apply chip border-blue-300 bg-blue-50 text-blue-700 shadow-card;
+  }
+
+  .chip-change {
+    @apply chip border-cream-200 bg-white text-ink-500 shadow-card
+           hover:border-banana-300 hover:text-banana-700 hover:bg-banana-50;
+  }
+  .chip-change-active {
+    @apply chip border-banana-300 bg-banana-50 text-banana-700 shadow-card;
+  }
+
+  /* ── Labels ── */
+  .label-step {
+    @apply text-[10px] font-display font-bold uppercase tracking-widest text-banana-500;
+  }
+  .label-section {
+    @apply text-xs font-sans font-semibold uppercase tracking-widest text-ink-400;
+  }
+
+  /* ── Mode Toggle ── */
+  .mode-btn {
+    @apply flex-1 flex items-center justify-center gap-2 py-3 px-4 rounded-xl
+           font-sans font-medium text-sm transition-all duration-200;
+  }
+  .mode-btn-active {
+    @apply bg-white text-ink-900 shadow-card border border-cream-200;
+  }
+  .mode-btn-inactive {
+    @apply text-ink-400 hover:text-ink-700;
   }
 }
 
-/* Typing cursor animation */
+/* ── Aurora background blobs ── */
+.aurora-blob {
+  position: absolute;
+  border-radius: 50%;
+  filter: blur(60px);
+  pointer-events: none;
+  will-change: transform;
+}
+
+/* ── Typing cursor ── */
 @keyframes blink {
   0%, 100% { opacity: 1; }
   50% { opacity: 0; }
@@ -82,12 +149,54 @@
 
 .typing-cursor::after {
   content: '▋';
-  @apply text-banana-500;
+  color: #F59E0B;
   animation: blink 1s step-end infinite;
   margin-left: 1px;
 }
 
-/* Drag over state */
-.drag-over {
-  @apply border-banana-500 bg-banana-500/5;
+/* ── Drag-over drop zone ── */
+.drop-zone-active {
+  border-color: #F59E0B !important;
+  background-color: #FFFBEB !important;
+  box-shadow: 0 0 0 4px rgba(245, 158, 11, 0.12) !important;
+}
+
+/* ── Gradient border on drop zone hover ── */
+.drop-zone-gradient {
+  position: relative;
+}
+
+/* ── Shimmer loading ── */
+.shimmer-bg {
+  background: linear-gradient(90deg, #F5F3EE 25%, #EDE9E0 50%, #F5F3EE 75%);
+  background-size: 200% 100%;
+  animation: shimmer 1.5s linear infinite;
+}
+
+/* ── Prose monospace output ── */
+.prompt-output {
+  @apply font-mono text-xs leading-relaxed text-ink-800;
+  white-space: pre-wrap;
+  word-break: break-word;
+}
+
+/* ── Image upload thumbnail ── */
+.thumb-overlay {
+  @apply absolute inset-0 bg-ink-900/60 opacity-0 group-hover:opacity-100
+         transition-opacity duration-200 flex flex-col items-center justify-center gap-2;
+  border-radius: inherit;
+}
+
+/* ── Focus ring for accessibility ── */
+*:focus-visible {
+  outline: 2px solid #F59E0B;
+  outline-offset: 2px;
+}
+
+/* ── Smooth scroll restoration ── */
+@media (prefers-reduced-motion: reduce) {
+  *, *::before, *::after {
+    animation-duration: 0.01ms !important;
+    transition-duration: 0.01ms !important;
+  }
 }
