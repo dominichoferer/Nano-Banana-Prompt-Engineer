@@ -358,17 +358,24 @@ const RESOLUTION_CONFIG: Record<string, { hint: string }> = {
   '4K': { hint: 'ultra HD, 4K, 4096px, hyper-detailed, maximum quality, ultra sharp' },
 }
 
+const MODEL_IDS: Record<string, string> = {
+  flash: 'gemini-3.1-flash-image-preview',
+  pro:   'gemini-3-pro-image-preview',
+}
+
 app.post('/api/generate', async (req: Request, res: Response) => {
   try {
-    const { prompt, aspectRatio, resolution } = req.body as {
+    const { prompt, aspectRatio, resolution, model } = req.body as {
       prompt: string
       aspectRatio?: string
       resolution?: string
+      model?: 'flash' | 'pro'
     }
     if (!prompt?.trim()) return res.status(400).json({ error: 'Prompt is required' })
     if (!process.env.GOOGLE_AI_API_KEY) return res.status(500).json({ error: 'GOOGLE_AI_API_KEY not configured' })
 
     const apiKey = process.env.GOOGLE_AI_API_KEY
+    const modelId = MODEL_IDS[model ?? 'flash']
     const resHint = resolution ? `, ${RESOLUTION_CONFIG[resolution]?.hint ?? ''}` : ''
     const nativeRatio = aspectRatio && SUPPORTED_API_RATIOS.has(aspectRatio)
     const ratioHint = aspectRatio && !nativeRatio ? `, ${aspectRatio} aspect ratio` : ''
@@ -377,7 +384,7 @@ app.post('/api/generate', async (req: Request, res: Response) => {
     const imageGenerationConfig: Record<string, string> = {}
     if (nativeRatio && aspectRatio) imageGenerationConfig.aspectRatio = aspectRatio
 
-    const url = `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash-preview-image-generation:generateContent?key=${apiKey}`
+    const url = `https://generativelanguage.googleapis.com/v1beta/models/${modelId}:generateContent?key=${apiKey}`
     const fetchRes = await fetch(url, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
@@ -399,7 +406,7 @@ app.post('/api/generate', async (req: Request, res: Response) => {
     res.json({
       image: `data:${img.inlineData.mimeType};base64,${img.inlineData.data}`,
       prompt: p,
-      model: 'Gemini 2.0 Flash',
+      model: model === 'pro' ? 'Gemini 3 Pro' : 'Gemini 3.1 Flash',
     })
   } catch (err) {
     res.status(500).json({ error: err instanceof Error ? err.message : 'Unknown error' })

@@ -282,6 +282,8 @@ export default function App() {
   const [generationError, setGenerationError] = useState<string | null>(null)
   const [generatedImage, setGeneratedImage] = useState<string | null>(null)
   const [generatedModel, setGeneratedModel] = useState<string | undefined>()
+  const [selectedModel, setSelectedModel] = useState<'flash' | 'pro'>('flash')
+  const [selectedResolution, setSelectedResolution] = useState<'1K' | '2K' | '4K'>('2K')
 
   const addImages = useCallback((files: FileList | File[]) => {
     const accepted = Array.from(files).filter((f) => f.type.startsWith('image/'))
@@ -372,7 +374,7 @@ export default function App() {
       const res = await fetch('/api/generate', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ prompt: prompt.trim() }),
+        body: JSON.stringify({ prompt: prompt.trim(), model: selectedModel, resolution: selectedResolution }),
       })
       if (!res.ok) {
         const err = await res.json().catch(() => ({ error: res.statusText }))
@@ -386,7 +388,7 @@ export default function App() {
       setGenerationError(err instanceof Error ? err.message : 'Generierung fehlgeschlagen')
       setGenerationStatus('error')
     }
-  }, [prompt])
+  }, [prompt, selectedModel, selectedResolution])
 
   const toggleChange = useCallback((area: FocusArea) =>
     setChangeAreas((p) => p.includes(area) ? p.filter((a) => a !== area) : [...p, area]), [])
@@ -602,6 +604,33 @@ export default function App() {
               prompt={prompt}
               activeModel={generatedModel}
             />
+
+            {/* Model + Resolution selectors */}
+            <div className="grid grid-cols-2 gap-3">
+              <div className="flex flex-col gap-1.5">
+                <span className="label-section">Modell</span>
+                <div className="bg-cream-100 rounded-xl p-1 flex gap-1">
+                  <button onClick={() => setSelectedModel('flash')} className={`mode-btn text-xs py-2 ${selectedModel === 'flash' ? 'mode-btn-active' : 'mode-btn-inactive'}`}>
+                    ⚡ Flash
+                    <span className="text-[10px] opacity-60 ml-0.5">schnell</span>
+                  </button>
+                  <button onClick={() => setSelectedModel('pro')} className={`mode-btn text-xs py-2 ${selectedModel === 'pro' ? 'mode-btn-active' : 'mode-btn-inactive'}`}>
+                    ✦ Pro
+                    <span className="text-[10px] opacity-60 ml-0.5">best</span>
+                  </button>
+                </div>
+              </div>
+              <div className="flex flex-col gap-1.5">
+                <span className="label-section">Auflösung</span>
+                <div className="bg-cream-100 rounded-xl p-1 flex gap-1">
+                  {(['1K', '2K', '4K'] as const).map((r) => (
+                    <button key={r} onClick={() => setSelectedResolution(r)} className={`mode-btn text-xs py-2 ${selectedResolution === r ? 'mode-btn-active' : 'mode-btn-inactive'}`}>
+                      {r}
+                    </button>
+                  ))}
+                </div>
+              </div>
+            </div>
 
             <button
               onClick={handleGenerate}
