@@ -289,6 +289,7 @@ export default function App() {
   const [quickModel, setQuickModel] = useState<'flash' | 'pro'>('flash')
   const [quickResolution, setQuickResolution] = useState<'1K' | '2K' | '4K'>('2K')
   const [quickAspectRatio, setQuickAspectRatio] = useState('1:1')
+  const [quickOpen, setQuickOpen] = useState(false)
   const [quickStatus, setQuickStatus] = useState<GenerationStatus>('idle')
   const [quickError, setQuickError] = useState<string | null>(null)
   const [quickImage, setQuickImage] = useState<string | null>(null)
@@ -320,7 +321,7 @@ export default function App() {
   }, [])
 
   const handleAnalyze = useCallback(async () => {
-    if (images.length === 0) return
+    if (images.length === 0 && promptMode !== 'generation') return
     setAnalysisStatus('analyzing')
     setAnalysisError(null)
     setPrompt('')
@@ -467,7 +468,18 @@ export default function App() {
               <p className="text-ink-400 text-[11px] font-sans mt-0.5">Claude Vision · Strukturierte Prompts</p>
             </div>
           </div>
-          <StatusPill status={analysisStatus} />
+          <div className="flex items-center gap-2">
+            <button
+              onClick={() => setQuickOpen((o) => !o)}
+              className={`flex items-center gap-1.5 px-3 py-1.5 rounded-full border text-xs font-sans font-medium transition-all duration-150 ${quickOpen ? 'bg-banana-500 text-white border-banana-500 shadow-banana' : 'bg-white text-ink-500 border-cream-200 hover:border-banana-300 hover:text-banana-600 shadow-card'}`}
+            >
+              <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 10V3L4 14h7v7l9-11h-7z" />
+              </svg>
+              Quick Generate
+            </button>
+            <StatusPill status={analysisStatus} />
+          </div>
         </div>
       </header>
 
@@ -620,7 +632,7 @@ export default function App() {
         </div>
 
         {/* ── Quick Generator ──────────────────────────────────────────────── */}
-        <div className="card p-5 flex flex-col gap-4 animate-slide-up">
+        {quickOpen && <div className="card p-5 flex flex-col gap-4 animate-slide-up">
           <div>
             <p className="label-step">Schnell generieren</p>
             <h3 className="font-display font-bold text-ink-900 text-lg mt-0.5">Bild direkt erstellen</h3>
@@ -713,7 +725,7 @@ export default function App() {
               </div>
             </div>
           )}
-        </div>
+        </div>}
 
         {/* ── Generated Prompt ─────────────────────────────────────────────── */}
         {(analysisStatus === 'analyzing' || analysisStatus === 'done' || prompt) && (
@@ -799,7 +811,7 @@ export default function App() {
                   <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                     <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 16l4.586-4.586a2 2 0 012.828 0L16 16m-2-2l1.586-1.586a2 2 0 012.828 0L20 14m-6-6h.01M6 20h12a2 2 0 002-2V6a2 2 0 00-2-2H6a2 2 0 00-2 2v12a2 2 0 002 2z" />
                   </svg>
-                  Bild generieren (Gemini 2.0)
+                  Nano Banana Pro generieren
                 </>
               )}
             </button>
