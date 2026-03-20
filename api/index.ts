@@ -10,7 +10,7 @@ const upload = multer({
   storage: multer.memoryStorage(),
   limits: { fileSize: 20 * 1024 * 1024, files: 10 },
   fileFilter: (_req, file, cb) => {
-    const allowed = ['image/jpeg', 'image/png', 'image/webp', 'image/gif']
+    const allowed = ['image/jpeg', 'image/png', 'image/webp', 'image/gif', 'application/pdf']
     cb(null, allowed.includes(file.mimetype))
   },
 })
@@ -299,14 +299,22 @@ app.post('/api/analyze', upload.array('images', 10), async (req: Request, res: R
 
     const client = new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY })
 
-    const imageContent: Anthropic.ImageBlockParam[] = files.map((file) => ({
-      type: 'image' as const,
-      source: {
-        type: 'base64' as const,
-        media_type: file.mimetype as 'image/jpeg' | 'image/png' | 'image/webp' | 'image/gif',
-        data: file.buffer.toString('base64'),
-      },
-    }))
+    const imageContent: (Anthropic.ImageBlockParam | Anthropic.DocumentBlockParam)[] = files.map((file) => {
+      if (file.mimetype === 'application/pdf') {
+        return {
+          type: 'document' as const,
+          source: { type: 'base64' as const, media_type: 'application/pdf' as const, data: file.buffer.toString('base64') },
+        }
+      }
+      return {
+        type: 'image' as const,
+        source: {
+          type: 'base64' as const,
+          media_type: file.mimetype as 'image/jpeg' | 'image/png' | 'image/webp' | 'image/gif',
+          data: file.buffer.toString('base64'),
+        },
+      }
+    })
 
     res.setHeader('Content-Type', 'text/event-stream')
     res.setHeader('Cache-Control', 'no-cache')

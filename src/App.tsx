@@ -59,8 +59,17 @@ function ImageCard({
     <div className="card p-3 flex flex-col gap-3 animate-scale-in">
       <div className="flex gap-3 items-start">
         <div className="relative flex-shrink-0">
-          <div className="w-16 h-16 rounded-xl overflow-hidden bg-cream-100 shadow-card">
-            <img src={img.preview} alt={img.name} className="w-full h-full object-cover" />
+          <div className="w-16 h-16 rounded-xl overflow-hidden bg-cream-100 shadow-card flex items-center justify-center">
+            {img.file.type === 'application/pdf' ? (
+              <div className="flex flex-col items-center gap-0.5">
+                <svg className="w-7 h-7 text-red-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M7 21h10a2 2 0 002-2V9.414a1 1 0 00-.293-.707l-5.414-5.414A1 1 0 0012.586 3H7a2 2 0 00-2 2v14a2 2 0 002 2z" />
+                </svg>
+                <span className="text-[9px] font-display font-bold text-red-400 uppercase">PDF</span>
+              </div>
+            ) : (
+              <img src={img.preview} alt={img.name} className="w-full h-full object-cover" />
+            )}
           </div>
           <div className="absolute -top-1.5 -left-1.5 bg-banana-500 text-white text-[10px] font-display font-bold w-5 h-5 rounded-full flex items-center justify-center shadow-banana">
             {index + 1}
@@ -141,7 +150,7 @@ function UploadZone({
           ${images.length > 0 ? 'p-5' : 'p-10'}
           ${dragging ? 'drop-zone-active' : 'border-cream-300 bg-cream-50 hover:border-banana-300 hover:bg-banana-50/50'}
           ${disabled ? 'opacity-50 cursor-not-allowed' : ''}`}>
-        <input ref={inputRef} type="file" accept="image/*" multiple className="hidden"
+        <input ref={inputRef} type="file" accept="image/*,application/pdf" multiple className="hidden"
           onChange={(e) => { if (e.target.files) onAdd(e.target.files); e.target.value = '' }} disabled={disabled} />
         {images.length === 0 ? (
           <>
@@ -156,7 +165,7 @@ function UploadZone({
                 {dragging ? 'Jetzt loslassen' : 'Referenzbild hier ablegen'}
               </p>
               <p className="text-ink-400 text-sm mt-1 font-sans">
-                oder <span className="text-banana-600 font-medium underline underline-offset-2">durchsuchen</span> · JPEG, PNG, WebP · max 20 MB
+                oder <span className="text-banana-600 font-medium underline underline-offset-2">durchsuchen</span> · JPEG, PNG, WebP, PDF · max 20 MB
               </p>
             </div>
           </>
@@ -220,7 +229,7 @@ function JobPanel({
   const [selectedAspectRatio, setSelectedAspectRatio] = useState('1:1')
 
   const addImages = useCallback((files: FileList | File[]) => {
-    const accepted = Array.from(files).filter((f) => f.type.startsWith('image/'))
+    const accepted = Array.from(files).filter((f) => f.type.startsWith('image/') || f.type === 'application/pdf')
     setImages((prev) => [...prev, ...accepted.map(createUploadedImage)])
   }, [])
 
@@ -290,7 +299,7 @@ function JobPanel({
     setGenerationStatus('generating'); setGenerationError(null); setGeneratedImage(null)
     try {
       const referenceImages = await Promise.all(
-        images.map((img) => compressImage(img.file).then(
+        images.filter((img) => img.file.type !== 'application/pdf').map((img) => compressImage(img.file).then(
           (compressed) => new Promise<{ mimeType: string; data: string }>((resolve) => {
             const reader = new FileReader()
             reader.onload = () => {
