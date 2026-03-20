@@ -194,12 +194,10 @@ function UploadZone({
 
 // ── Job Panel (self-contained per-job state + UI) ─────────────────────────────
 function JobPanel({
-  jobIndex,
   onAdd,
   onRemove,
   canRemove,
 }: {
-  jobIndex: number
   onAdd: () => void
   onRemove: () => void
   canRemove: boolean
@@ -324,12 +322,6 @@ function JobPanel({
 
   return (
     <div className="flex flex-col gap-5">
-      {/* Job label */}
-      {jobIndex > 0 && (
-        <div className="flex items-center gap-2">
-          <span className="text-xs font-display font-bold text-ink-300 tracking-widest uppercase">Auftrag {jobIndex + 1}</span>
-        </div>
-      )}
 
       {/* Upload Zone */}
       {promptMode === 'generation' && images.length === 0 && (
@@ -349,13 +341,17 @@ function JobPanel({
             <span className="label-section">Modus</span>
             <div className="flex items-center gap-2">
               <button onClick={onAdd} title="Neuen Auftrag hinzufügen"
-                className="w-7 h-7 rounded-full bg-banana-100 text-banana-600 hover:bg-banana-500 hover:text-white flex items-center justify-center transition-all duration-150 font-bold text-base shadow-sm">
-                +
+                className="w-7 h-7 rounded-full bg-banana-100 text-banana-600 hover:bg-banana-500 hover:text-white flex items-center justify-center transition-all duration-150 shadow-sm">
+                <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2.5} d="M12 4v16m8-8H4" />
+                </svg>
               </button>
               {canRemove && (
                 <button onClick={onRemove} title="Diesen Auftrag entfernen"
-                  className="w-7 h-7 rounded-full bg-red-50 text-red-400 hover:bg-red-500 hover:text-white flex items-center justify-center transition-all duration-150 text-base shadow-sm">
-                  ×
+                  className="w-7 h-7 rounded-full bg-red-50 text-red-400 hover:bg-red-500 hover:text-white flex items-center justify-center transition-all duration-150 shadow-sm">
+                  <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2.5} d="M6 18L18 6M6 6l12 12" />
+                  </svg>
                 </button>
               )}
             </div>
@@ -695,10 +691,9 @@ export default function App() {
 
         {/* Job Panels — side by side when multiple */}
         <div className={`flex gap-5 items-start ${jobs.length > 1 ? 'flex-row' : 'flex-col'}`}>
-          {jobs.map((id, idx) => (
+          {jobs.map((id) => (
             <div key={id} className={jobs.length > 1 ? 'flex-1 min-w-0' : 'w-full'}>
               <JobPanel
-                jobIndex={idx}
                 onAdd={addJob}
                 onRemove={() => removeJob(id)}
                 canRemove={jobs.length > 1}
