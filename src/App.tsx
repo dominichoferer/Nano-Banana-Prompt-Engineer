@@ -215,6 +215,7 @@ function JobPanel({
   const [generatedModel, setGeneratedModel] = useState<string | undefined>()
   const [selectedModel, setSelectedModel] = useState<'flash' | 'pro'>('flash')
   const [selectedResolution, setSelectedResolution] = useState<'1K' | '2K' | '4K'>('2K')
+  const [selectedAspectRatio, setSelectedAspectRatio] = useState('1:1')
 
   const addImages = useCallback((files: FileList | File[]) => {
     const accepted = Array.from(files).filter((f) => f.type.startsWith('image/'))
@@ -301,7 +302,7 @@ function JobPanel({
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
-          prompt: prompt.trim(), model: selectedModel, resolution: selectedResolution,
+          prompt: prompt.trim(), model: selectedModel, resolution: selectedResolution, aspectRatio: selectedAspectRatio,
           referenceImages: referenceImages.length > 0 ? referenceImages : undefined,
         }),
       })
@@ -315,7 +316,7 @@ function JobPanel({
       setGenerationError(err instanceof Error ? err.message : 'Generierung fehlgeschlagen')
       setGenerationStatus('error')
     }
-  }, [prompt, selectedModel, selectedResolution, images])
+  }, [prompt, selectedModel, selectedResolution, selectedAspectRatio, images])
 
   const canAnalyze = (images.length > 0 || promptMode === 'generation') && analysisStatus !== 'analyzing'
   const canGenerate = prompt.trim().length > 0 && generationStatus !== 'generating'
@@ -489,6 +490,17 @@ function JobPanel({
                   </button>
                 ))}
               </div>
+            </div>
+          </div>
+          <div className="flex flex-col gap-1.5">
+            <span className="label-section">Format</span>
+            <div className="flex flex-wrap gap-1.5">
+              {['1:1', '16:9', '9:16', '4:3', '3:4', '4:5', '5:4'].map((r) => (
+                <button key={r} onClick={() => setSelectedAspectRatio(r)}
+                  className={`px-3 py-1.5 rounded-lg text-xs font-sans font-medium transition-all ${selectedAspectRatio === r ? 'bg-banana-500 text-white shadow-sm' : 'bg-cream-100 text-ink-500 hover:bg-cream-200'}`}>
+                  {r}
+                </button>
+              ))}
             </div>
           </div>
           <button onClick={handleGenerate} disabled={!canGenerate} className="btn-primary w-full py-4 text-base">
