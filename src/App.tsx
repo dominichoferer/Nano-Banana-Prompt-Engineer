@@ -324,12 +324,10 @@ function JobPanel({
 
   return (
     <div className="flex flex-col gap-5">
-      {/* Job divider (for jobs after the first) */}
+      {/* Job label */}
       {jobIndex > 0 && (
-        <div className="flex items-center gap-3 pt-2">
-          <div className="flex-1 h-px bg-cream-200" />
+        <div className="flex items-center gap-2">
           <span className="text-xs font-display font-bold text-ink-300 tracking-widest uppercase">Auftrag {jobIndex + 1}</span>
-          <div className="flex-1 h-px bg-cream-200" />
         </div>
       )}
 
@@ -610,7 +608,7 @@ export default function App() {
       </div>
 
       {/* ── Main ──────────────────────────────────────────────────────────── */}
-      <main className="max-w-4xl mx-auto w-full px-5 py-8 flex flex-col gap-6">
+      <main className={`${jobs.length > 1 ? 'max-w-7xl' : 'max-w-4xl'} mx-auto w-full px-5 py-8 flex flex-col gap-6`}>
 
         {/* Quick Generator */}
         {quickOpen && (
@@ -695,16 +693,19 @@ export default function App() {
           </div>
         )}
 
-        {/* Job Panels */}
-        {jobs.map((id, idx) => (
-          <JobPanel
-            key={id}
-            jobIndex={idx}
-            onAdd={addJob}
-            onRemove={() => removeJob(id)}
-            canRemove={jobs.length > 1}
-          />
-        ))}
+        {/* Job Panels — side by side when multiple */}
+        <div className={`flex gap-5 items-start ${jobs.length > 1 ? 'flex-row' : 'flex-col'}`}>
+          {jobs.map((id, idx) => (
+            <div key={id} className={jobs.length > 1 ? 'flex-1 min-w-0' : 'w-full'}>
+              <JobPanel
+                jobIndex={idx}
+                onAdd={addJob}
+                onRemove={() => removeJob(id)}
+                canRemove={jobs.length > 1}
+              />
+            </div>
+          ))}
+        </div>
 
       </main>
 
