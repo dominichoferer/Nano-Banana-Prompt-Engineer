@@ -284,6 +284,14 @@ export default function App() {
   const [generatedModel, setGeneratedModel] = useState<string | undefined>()
   const [selectedModel, setSelectedModel] = useState<'flash' | 'pro'>('flash')
   const [selectedResolution, setSelectedResolution] = useState<'1K' | '2K' | '4K'>('2K')
+  // Quick generator (always visible, no prompt generation needed)
+  const [quickPrompt, setQuickPrompt] = useState('')
+  const [quickModel, setQuickModel] = useState<'flash' | 'pro'>('flash')
+  const [quickResolution, setQuickResolution] = useState<'1K' | '2K' | '4K'>('2K')
+  const [quickAspectRatio, setQuickAspectRatio] = useState('1:1')
+  const [quickStatus, setQuickStatus] = useState<GenerationStatus>('idle')
+  const [quickError, setQuickError] = useState<string | null>(null)
+  const [quickImage, setQuickImage] = useState<string | null>(null)
 
   const addImages = useCallback((files: FileList | File[]) => {
     const accepted = Array.from(files).filter((f) => f.type.startsWith('image/'))
@@ -389,6 +397,30 @@ export default function App() {
       setGenerationStatus('error')
     }
   }, [prompt, selectedModel, selectedResolution])
+
+  const handleQuickGenerate = useCallback(async () => {
+    if (!quickPrompt.trim()) return
+    setQuickStatus('generating')
+    setQuickError(null)
+    setQuickImage(null)
+    try {
+      const res = await fetch('/api/generate', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ prompt: quickPrompt.trim(), model: quickModel, resolution: quickResolution, aspectRatio: quickAspectRatio }),
+      })
+      if (!res.ok) {
+        const err = await res.json().catch(() => ({ error: res.statusText }))
+        throw new Error(err.error || `Server error: ${res.status}`)
+      }
+      const data = await res.json()
+      setQuickImage(data.image)
+      setQuickStatus('done')
+    } catch (err) {
+      setQuickError(err instanceof Error ? err.message : 'Fehler')
+      setQuickStatus('error')
+    }
+  }, [quickPrompt, quickModel, quickResolution, quickAspectRatio])
 
   const toggleChange = useCallback((area: FocusArea) =>
     setChangeAreas((p) => p.includes(area) ? p.filter((a) => a !== area) : [...p, area]), [])
@@ -564,6 +596,102 @@ export default function App() {
               <span className="text-ink-700 font-medium">Nano Banana Pro</span> oder jedes andere KI-Bildtool.
             </p>
           </div>
+        </div>
+
+        {/* ── Quick Generator ──────────────────────────────────────────────── */}
+        <div className="card p-5 flex flex-col gap-4 animate-slide-up">
+          <div>
+            <p className="label-step">Schnell generieren</p>
+            <h3 className="font-display font-bold text-ink-900 text-lg mt-0.5">Bild direkt erstellen</h3>
+          </div>
+
+          {/* Prompt input */}
+          <div className="flex gap-2">
+            <input
+              type="text"
+              value={quickPrompt}
+              onChange={(e) => setQuickPrompt(e.target.value)}
+              onKeyDown={(e) => e.key === 'Enter' && quickPrompt.trim() && quickStatus !== 'generating' && handleQuickGenerate()}
+              disabled={quickStatus === 'generating'}
+              placeholder="z.B. golden hour portrait, studio product shot, futuristic city…"
+              className="input-field flex-1 text-sm"
+            />
+            <button
+              onClick={handleQuickGenerate}
+              disabled={!quickPrompt.trim() || quickStatus === 'generating'}
+              className="btn-primary px-5 py-3 text-sm whitespace-nowrap"
+            >
+              {quickStatus === 'generating' ? (
+                <svg className="w-4 h-4 animate-spin" fill="none" viewBox="0 0 24 24">
+                  <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
+                  <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z" />
+                </svg>
+              ) : (
+                <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 10V3L4 14h7v7l9-11h-7z" />
+                </svg>
+              )}
+              {quickStatus === 'generating' ? 'Lädt…' : 'Generieren'}
+            </button>
+          </div>
+
+          {/* Model + Resolution + Ratio */}
+          <div className="grid grid-cols-3 gap-2">
+            <div className="flex flex-col gap-1">
+              <span className="label-section text-[10px]">Modell</span>
+              <div className="bg-cream-100 rounded-xl p-0.5 flex gap-0.5">
+                {(['flash', 'pro'] as const).map((m) => (
+                  <button key={m} onClick={() => setQuickModel(m)}
+                    className={`mode-btn text-xs py-1.5 ${quickModel === m ? 'mode-btn-active' : 'mode-btn-inactive'}`}>
+                    {m === 'flash' ? '⚡ Flash' : '✦ Pro'}
+                  </button>
+                ))}
+              </div>
+            </div>
+            <div className="flex flex-col gap-1">
+              <span className="label-section text-[10px]">Auflösung</span>
+              <div className="bg-cream-100 rounded-xl p-0.5 flex gap-0.5">
+                {(['1K', '2K', '4K'] as const).map((r) => (
+                  <button key={r} onClick={() => setQuickResolution(r)}
+                    className={`mode-btn text-xs py-1.5 ${quickResolution === r ? 'mode-btn-active' : 'mode-btn-inactive'}`}>
+                    {r}
+                  </button>
+                ))}
+              </div>
+            </div>
+            <div className="flex flex-col gap-1">
+              <span className="label-section text-[10px]">Format</span>
+              <div className="bg-cream-100 rounded-xl p-0.5 flex gap-0.5 flex-wrap">
+                {(['1:1', '16:9', '9:16', '4:3', '3:4', '4:5', '5:4'] as const).map((r) => (
+                  <button key={r} onClick={() => setQuickAspectRatio(r)}
+                    className={`mode-btn text-xs py-1.5 ${quickAspectRatio === r ? 'mode-btn-active' : 'mode-btn-inactive'}`}>
+                    {r}
+                  </button>
+                ))}
+              </div>
+            </div>
+          </div>
+
+          {/* Result */}
+          {quickStatus === 'error' && quickError && (
+            <div className="bg-red-50 border border-red-200 rounded-xl p-3 text-red-600 text-xs animate-scale-in">{quickError}</div>
+          )}
+          {quickImage && (
+            <div className="relative rounded-2xl overflow-hidden bg-cream-100 animate-scale-in">
+              <img src={quickImage} alt="Generated" className="w-full object-contain max-h-[500px]" />
+              <div className="absolute bottom-3 right-3 flex gap-2">
+                <button
+                  onClick={() => { const a = document.createElement('a'); a.href = quickImage!; a.download = `quick-${Date.now()}.jpg`; a.click() }}
+                  className="btn-primary py-2 px-3 text-xs"
+                >
+                  <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4" />
+                  </svg>
+                  Speichern
+                </button>
+              </div>
+            </div>
+          )}
         </div>
 
         {/* ── Generated Prompt ─────────────────────────────────────────────── */}

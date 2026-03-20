@@ -20,97 +20,81 @@ app.use(express.json({ limit: '50mb' }))
 
 // ── System Prompt ───────────────────────────────────────────────────────────
 
-const SYSTEM_PROMPT = `You are an elite AI image prompt engineer specializing in creating structured, ultra-detailed prompts for AI image generation and photo retouching tools (Nano Banana Pro, Midjourney, DALL-E, Stable Diffusion, Flux).
+const SYSTEM_PROMPT = `You are an AI image prompt engineer. You create focused, structured prompts for AI image retouching and generation tools.
 
-You analyze reference images with extreme precision and generate prompts in a specific structured format using section dividers, warning markers, and imperative instructions.
+CRITICAL RULE: Write ONLY the sections that are explicitly requested. Do NOT add Lighting, Color Grading, Background, or Output Specs unless they are in the requested changes list or the user's description explicitly asks for them.
 
 ═══════════════════════════════════════════
-OUTPUT FORMAT RULES
+OUTPUT FORMAT
 ═══════════════════════════════════════════
 
-1. HEADER LINE
-   Start with a clear declaration of the job type AND a reference index:
-   — PHOTO RETOUCH: "USE THE UPLOADED PHOTO(S) AS STRICT REFERENCE BASE.\nTHIS IS A PHOTO RETOUCH — NOT A NEW IMAGE GENERATION."
-   — NEW GENERATION: "USE THE UPLOADED PHOTO(S) AS VISUAL STYLE REFERENCE.\nTHIS IS A NEW IMAGE GENERATION INSPIRED BY THE REFERENCE(S)."
+1. HEADER (always)
+   Retouch: "USE THE UPLOADED PHOTO(S) AS STRICT REFERENCE BASE.\nTHIS IS A PHOTO RETOUCH — NOT A NEW IMAGE GENERATION."
+   Generation: "USE THE UPLOADED PHOTO(S) AS VISUAL STYLE REFERENCE.\nTHIS IS A NEW IMAGE GENERATION INSPIRED BY THE REFERENCE(S)."
 
-   If multiple images are provided, always add an IMAGE INDEX section directly after the header:
+2. IMAGE INDEX (always when images present)
    IMAGE INDEX
    ═══════════════════════════════════════════
-   — IMAGE 1 — [filename]: [brief 1-line description of what is in this image]
-   — IMAGE 2 — [filename]: [brief 1-line description]
-   (This tells the downstream AI tool which image number is which.)
+   — IMAGE 1 — [filename]: [one-line description]
+   — IMAGE 2 — [filename]: [one-line description]
 
-2. USE ═══════════════════════════════════════════ as section dividers (exactly this length)
+3. LOCK SECTIONS (only when locks were set — keep them SHORT and assertive)
 
-3. SUBJECT LOCK SECTION (include when the request requires preserving a non-face subject — a body silhouette, object, or product)
-   Format:
-   📐 SUBJECT LOCK — PROPORTIONS & COMPOSITION ⚠️
+   Object/Proportion Lock:
+   📐 SUBJECT LOCK — IMAGE [N] ⚠️
    ═══════════════════════════════════════════
-   Specify which IMAGE number this applies to.
-   Describe EXACTLY: overall dimensions and aspect ratio, body/object silhouette, spatial position in frame, structural features that must not change.
-   End with: "Do NOT alter the proportions, silhouette, or overall composition of the main subject."
+   IMAGE [N] is the MASTER REFERENCE. The output must match IMAGE [N] in EVERY visual aspect except the one requested change.
+   Preserve EXACTLY: rendering style, lighting, shadows, camera angle, background, surface textures, composition, colors of all unchanged elements.
+   THE ONLY PERMITTED CHANGE is what is listed in CHANGES REQUESTED.
+   Any other deviation = wrong result.
 
-4. FACE LOCK SECTION (include whenever people are present and face preservation is required)
-   Format:
-   ⚠️ FACE LOCK — ABSOLUTE PRIORITY RULE ⚠️
+   Face Lock:
+   ⚠️ FACE LOCK — IMAGE [N] ⚠️
    ═══════════════════════════════════════════
-   Specify which IMAGE number each person comes from (e.g., "PERSON from IMAGE 1 — left side:").
-   Then list pixel-perfect preservation rules for EACH person detected.
-   Describe EXACTLY: facial contours, eye shape/color/spacing, nose, lips, skin tone, skin texture, hair (color, highlights, texture, how it falls), age appearance, eyebrows.
-   End with: "If the faces are not 100% identical to the reference, the result is wrong."
+   Preserve ALL facial features of the person in IMAGE [N] with pixel-perfect accuracy.
+   Do NOT change face shape, eyes, nose, lips, skin tone, hair, or any facial detail.
+   If the face is not 100% identical to IMAGE [N], the result is wrong.
 
-5. SUBJECT DESCRIPTIONS
-   For each person use: PERSON NAME or POSITION (left/right/center) + which IMAGE they come from
-   Describe: hair, skin tone, clothing (every item with color, material, brand if visible), accessories, shoes.
-   End each person's section with: "FACE UNCHANGED."
+   Custom Lock:
+   🔒 CUSTOM LOCK — IMAGE [N]
+   ═══════════════════════════════════════════
+   Preserve EXACTLY: "[custom text]" — must appear identical to IMAGE [N]. No exceptions.
 
-6. POSE & POSITIONING SECTION
-   Format header: ——— POSE CORRECTIONS ———
-   Be numerically precise: "10 degrees", "5cm gap", "45° angle"
-   Describe: spacing, body angles, posture details (spine, shoulders, chest, chin), expressions, what they're holding or doing.
+4. REQUESTED CHANGES (always for retouch — describe what must change, clearly and specifically)
+   ✏️ CHANGES REQUESTED
+   ═══════════════════════════════════════════
+   List each requested change. Reference IMAGE numbers. Be specific about what must change and how.
 
-7. LIGHTING SECTION
-   Format header: 📸 PERFECT PHOTOGRAPHIC LIGHTING & COLOR
-   Include:
-   — Camera: brand, model, lens, aperture, ISO, shutter speed
-   — KEY LIGHT: position, type, angle, quality description
-   — FILL LIGHT: position, power ratio, effect
-   — RIM / HAIR LIGHT: position, effect
-   — EYE CATCHLIGHTS: description (always include this for portraits)
-   — SKIN RETOUCHING: style (editorial, frequency separation, etc.)
+5. OPTIONAL SECTIONS — include ONLY when explicitly in the requested changes or user description:
 
-8. COLOR GRADING SECTION
-   Include:
-   — Overall tone
-   — Whites / Shadows treatment
-   — Skin tone quality
-   — Contrast style
-   — Reference publications or brands (e.g. "Kinfolk Magazine", "Monocle editorial", "high-end brand campaign")
-   — What to AVOID (no Instagram filters, no oversaturation, no cool blue tones, etc.)
+   Lighting (only if lighting was requested):
+   📸 LIGHTING
+   ═══════════════════════════════════════════
+   Describe the exact lighting setup required.
 
-9. BACKGROUND
-   Describe exact background replacement or enhancement.
-   If background comes from a specific image, reference it: "USE BACKGROUND FROM IMAGE 2 exactly as captured."
-   Include: shadows, reflections, environment details.
+   Color Grading (only if color change was requested):
+   🎨 COLOR GRADING
+   ═══════════════════════════════════════════
+   Describe the required color treatment and what to avoid.
 
-10. OUTPUT SPECS
-   Resolution (8K default for retouching), quality requirements, zero-artifacts rule.
+   Background (only if background change was requested):
+   🖼️ BACKGROUND
+   ═══════════════════════════════════════════
+   Describe the exact background change. Reference source image if applicable.
 
-11. FINAL ENFORCEMENT RULE
-    One clear, strong closing rule that reinforces the most critical requirement.
-    Always end with the image index reminder: "When in doubt, refer to IMAGE 1/2/3 as indexed above."
+6. FINAL RULE (always — one concise enforcement line)
 
 ═══════════════════════════════════════════
-WRITING STYLE RULES
+WRITING STYLE
 ═══════════════════════════════════════════
-— Write in direct imperative style ("Preserve exactly:" not "The AI should preserve:")
-— Use em dashes (—) for list items within sections
-— Use CAPS for section headers and critical keywords
-— Be exhaustively specific — real camera brands, real measurement values, real publication names
-— Never use vague terms — replace "good lighting" with "large octabox softbox positioned 45° camera-left"
-— All prompts must be in English
-— Do NOT add explanations, preamble, or commentary — output the prompt directly
-— ALWAYS reference images by their number (IMAGE 1, IMAGE 2, etc.) throughout the prompt`
+— Direct imperative: "Preserve exactly:" not "The AI should preserve:"
+— Em dashes (—) for list items
+— CAPS for headers and critical constraints
+— Specific where it matters — no vague terms
+— All prompts in English
+— No output resolution or quality specs (handled separately by the user)
+— No preamble or commentary — output the prompt directly
+— ALWAYS reference images by number (IMAGE 1, IMAGE 2, etc.)`
 
 // ── User template ───────────────────────────────────────────────────────────
 
@@ -122,10 +106,10 @@ interface ImageSetting {
 }
 
 const CHANGE_MAP: Record<string, string> = {
-  pose:       'POSE & POSITIONING section — required body alignment, spacing, angles, expression corrections',
-  lighting:   'LIGHTING section — camera specs, key/fill/rim lights, catchlights, required improvements',
-  color:      'COLOR GRADING section — tone, shadows, whites, contrast adjustments',
-  background: 'BACKGROUND section — exact replacement or enhancement description',
+  pose:       'Pose & positioning — describe required body alignment, angles, spacing, expression',
+  lighting:   'Lighting — describe required lighting setup (include 📸 LIGHTING section)',
+  color:      'Color grading — describe required color treatment (include 🎨 COLOR GRADING section)',
+  background: 'Background — describe required background change (include 🖼️ BACKGROUND section)',
 }
 
 function buildImageIndex(settings: ImageSetting[]): string {
@@ -147,9 +131,19 @@ function buildPerImageLocks(settings: ImageSetting[]): string {
     }
     if (s.objectLock) {
       lines.push(
-        `— ⚠️ OBJECT/PROPORTION LOCK (IMAGE ${num}): Preserve exact silhouette, body proportions, ` +
-        `spatial positioning in frame, and overall composition from IMAGE ${num}. ` +
-        `DO NOT resize, morph, recompose, or restructure the subject.`,
+        `— ⚠️ SUBJECT LOCK (IMAGE ${num}): IMAGE ${num} is the MASTER REFERENCE.\n` +
+        `The output must be visually identical to IMAGE ${num} in EVERY aspect except the single explicitly requested change.\n` +
+        `Preserve EXACTLY — zero deviation allowed:\n` +
+        `  · Rendering style and overall visual treatment (photo-realistic, CGI, product shot — identical to IMAGE ${num})\n` +
+        `  · Every light source, shadow, highlight, reflection, and ambient occlusion from IMAGE ${num}\n` +
+        `  · Camera angle, focal length, perspective, depth of field — pixel-identical to IMAGE ${num}\n` +
+        `  · Background: every detail, color, gradient, surface — identical to IMAGE ${num}\n` +
+        `  · Surface finish, material texture, and sheen of all objects in IMAGE ${num}\n` +
+        `  · Composition: subject position, size in frame, spatial relationships — identical to IMAGE ${num}\n` +
+        `  · Colors of ALL elements that are NOT part of the explicitly requested change\n` +
+        `  · Image sharpness, contrast, tonal range — identical to IMAGE ${num}\n` +
+        `THE ONLY PERMITTED CHANGE is the one explicitly listed in the CHANGES REQUESTED section below.\n` +
+        `Any deviation beyond that single change means the result is wrong.`,
       )
     }
     if (s.customLock) {
@@ -237,6 +231,18 @@ When the user references "Bild 2" / "Image 2" / "the second image" — this mean
     ? `\n\nPerfectly retouch and enhance all images while preserving every detail of the originals.`
     : ''
 
+  const areas = changeAreas ?? []
+  const sectionsToInclude: string[] = []
+  if (hasAnyLocks) sectionsToInclude.push('Lock sections (only for images that have locks set)')
+  if (hasChange || userDescription?.trim()) sectionsToInclude.push('CHANGES REQUESTED section (what must change and how)')
+  if (areas.includes('lighting')) sectionsToInclude.push('📸 LIGHTING section')
+  if (areas.includes('color')) sectionsToInclude.push('🎨 COLOR GRADING section')
+  if (areas.includes('background')) sectionsToInclude.push('🖼️ BACKGROUND section')
+
+  const sectionsNote = sectionsToInclude.length > 0
+    ? `\nInclude ONLY these sections (besides header + image index):\n${sectionsToInclude.map((s) => `— ${s}`).join('\n')}\nDo NOT add any other sections.`
+    : '\nDo NOT add Lighting, Color Grading, Background, or Output Specs — they were not requested.'
+
   return `USE THE UPLOADED PHOTO(S) AS STRICT REFERENCE BASE.
 THIS IS A PHOTO RETOUCH — NOT A NEW IMAGE GENERATION.
 
@@ -245,9 +251,14 @@ ${imageRefSection}${locksSection}${changeSection}${userBlock}${instruction}
 ═══════════════════════════════════════════
 TASK
 ═══════════════════════════════════════════
-Analyze all ${count} uploaded image(s) carefully, respecting all per-image lock rules above.
-Generate the structured prompt NOW following the format from your system instructions.
-Reference images by their IMAGE NUMBER (IMAGE 1, IMAGE 2, etc.) throughout every section of the prompt.
+Analyze all ${count} uploaded image(s) carefully, respecting all lock rules above.${sectionsNote}
+Reference images by IMAGE NUMBER (IMAGE 1, IMAGE 2, etc.) throughout.
+
+⛔ CRITICAL OUTPUT RULES — include these verbatim at the end of the prompt:
+— OUTPUT: ONE single image only. Do NOT generate multiple versions, side-by-side comparisons, before/after layouts, or grids. One image. Period.
+— Do NOT show the original alongside the result. The output IS the modified version.
+— If the AI tool would normally output a comparison, STOP — output only the final result.
+
 Start directly with the header line — no preamble.`
 }
 
@@ -350,17 +361,21 @@ interface GeminiResponse {
   error?: { message: string; code: number }
 }
 
-const SUPPORTED_API_RATIOS = new Set(['1:1', '16:9', '9:16', '4:3', '3:4'])
+const SUPPORTED_API_RATIOS = new Set(['1:1', '16:9', '9:16', '4:3', '3:4', '4:5', '5:4'])
 
-const RESOLUTION_CONFIG: Record<string, { hint: string }> = {
-  '1K': { hint: 'high quality, 1024px' },
-  '2K': { hint: 'ultra high quality, 2K, 2048px' },
-  '4K': { hint: 'ultra HD, 4K, 4096px, hyper-detailed, maximum quality, ultra sharp' },
-}
 
-const MODEL_IDS: Record<string, string> = {
+const GEN_MODEL_IDS: Record<string, string> = {
   flash: 'gemini-3.1-flash-image-preview',
   pro:   'gemini-3-pro-image-preview',
+}
+const GEN_MODEL_LABELS: Record<string, string> = {
+  flash: 'Gemini 3.1 Flash',
+  pro:   'Gemini 3 Pro',
+}
+const GEN_QUALITY_HINT: Record<string, string> = {
+  '1K': 'high quality, detailed',
+  '2K': 'ultra high quality, 2K resolution, highly detailed, sharp',
+  '4K': 'ultra HD, 4K resolution, hyper-detailed, maximum sharpness, professional quality, ultra sharp edges, rich textures',
 }
 
 app.post('/api/generate', async (req: Request, res: Response) => {
@@ -375,24 +390,28 @@ app.post('/api/generate', async (req: Request, res: Response) => {
     if (!process.env.GOOGLE_AI_API_KEY) return res.status(500).json({ error: 'GOOGLE_AI_API_KEY not configured' })
 
     const apiKey = process.env.GOOGLE_AI_API_KEY
-    const modelId = MODEL_IDS[model ?? 'flash']
-    const resHint = resolution ? `, ${RESOLUTION_CONFIG[resolution]?.hint ?? ''}` : ''
+    const modelKey = model ?? 'flash'
+    const modelId = GEN_MODEL_IDS[modelKey]
+
+    const qualityHint = resolution ? GEN_QUALITY_HINT[resolution] ?? '' : ''
     const nativeRatio = aspectRatio && SUPPORTED_API_RATIOS.has(aspectRatio)
     const ratioHint = aspectRatio && !nativeRatio ? `, ${aspectRatio} aspect ratio` : ''
-    const p = `${prompt.trim()}${ratioHint}${resHint}`.trim()
+    const enrichedPrompt = [prompt.trim(), qualityHint, ratioHint].filter(Boolean).join(', ')
 
-    const imageGenerationConfig: Record<string, string> = {}
-    if (nativeRatio && aspectRatio) imageGenerationConfig.aspectRatio = aspectRatio
+    const imageConfig: Record<string, string> = {}
+    if (resolution === '4K') imageConfig.imageSize = '4K'
+    else if (resolution === '2K') imageConfig.imageSize = '2K'
+    if (nativeRatio && aspectRatio) imageConfig.aspectRatio = aspectRatio
 
     const url = `https://generativelanguage.googleapis.com/v1beta/models/${modelId}:generateContent?key=${apiKey}`
     const fetchRes = await fetch(url, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({
-        contents: [{ parts: [{ text: p }] }],
+        contents: [{ parts: [{ text: enrichedPrompt }] }],
         generationConfig: {
           responseModalities: ['IMAGE', 'TEXT'],
-          ...(Object.keys(imageGenerationConfig).length > 0 ? { imageGenerationConfig } : {}),
+          ...(Object.keys(imageConfig).length > 0 ? { imageConfig } : {}),
         },
       }),
     })
@@ -405,8 +424,8 @@ app.post('/api/generate', async (req: Request, res: Response) => {
 
     res.json({
       image: `data:${img.inlineData.mimeType};base64,${img.inlineData.data}`,
-      prompt: p,
-      model: model === 'pro' ? 'Gemini 3 Pro' : 'Gemini 3.1 Flash',
+      prompt: enrichedPrompt,
+      model: GEN_MODEL_LABELS[modelKey],
     })
   } catch (err) {
     res.status(500).json({ error: err instanceof Error ? err.message : 'Unknown error' })
