@@ -4,7 +4,7 @@ import GeneratedImage from './components/GeneratedImage'
 import type { UploadedImage, AnalysisStatus, GenerationStatus, PromptMode, FocusArea } from './types'
 import { CHANGE_AREAS } from './types'
 
-// Compress image to max 1600px / JPEG 85%
+// ── Utilities ────────────────────────────────────────────────────────────────
 function compressImage(file: File): Promise<File> {
   return new Promise((resolve) => {
     const img = new Image()
@@ -47,42 +47,17 @@ function formatBytes(b: number) {
   return `${(b / 1048576).toFixed(1)} MB`
 }
 
-// ── Status indicator ──────────────────────────────────────────────────────────
-function StatusPill({ status }: { status: AnalysisStatus }) {
-  const map = {
-    idle:      { dot: 'bg-ink-300', text: 'text-ink-400',  label: 'Bereit', border: 'border-cream-200' },
-    analyzing: { dot: 'bg-banana-500 animate-pulse', text: 'text-banana-600', label: 'Claude analysiert…', border: 'border-banana-300' },
-    done:      { dot: 'bg-emerald-500', text: 'text-emerald-600', label: 'Prompt bereit', border: 'border-emerald-200' },
-    error:     { dot: 'bg-red-500', text: 'text-red-600', label: 'Fehler', border: 'border-red-200' },
-  }
-  const s = map[status]
-  return (
-    <span className={`hidden sm:flex items-center gap-2 px-3 py-1.5 rounded-full border bg-white text-xs font-sans font-medium shadow-card ${s.border} ${s.text}`}>
-      <span className={`w-1.5 h-1.5 rounded-full ${s.dot}`} />
-      {s.label}
-    </span>
-  )
-}
-
-// ── Image Card (per-image controls) ──────────────────────────────────────────
+// ── Image Card ────────────────────────────────────────────────────────────────
 function ImageCard({
-  img,
-  index,
-  onRemove,
-  onUpdate,
-  disabled,
+  img, index, onRemove, onUpdate, disabled,
 }: {
-  img: UploadedImage
-  index: number
-  onRemove: () => void
+  img: UploadedImage; index: number; onRemove: () => void
   onUpdate: (field: 'faceLock' | 'objectLock' | 'customLock', value: boolean | string) => void
   disabled?: boolean
 }) {
   return (
     <div className="card p-3 flex flex-col gap-3 animate-scale-in">
-      {/* Top row: thumbnail + info */}
       <div className="flex gap-3 items-start">
-        {/* Image number + thumbnail */}
         <div className="relative flex-shrink-0">
           <div className="w-16 h-16 rounded-xl overflow-hidden bg-cream-100 shadow-card">
             <img src={img.preview} alt={img.name} className="w-full h-full object-cover" />
@@ -91,34 +66,22 @@ function ImageCard({
             {index + 1}
           </div>
         </div>
-
-        {/* Name + size */}
         <div className="flex-1 min-w-0 pt-0.5">
           <p className="text-ink-700 text-xs font-sans font-medium truncate">{img.name}</p>
           <p className="text-ink-400 text-[11px] font-sans mt-0.5">{formatBytes(img.size)}</p>
-
-          {/* Quick lock chips */}
           <div className="flex flex-wrap gap-1.5 mt-2">
-            <button
-              type="button"
-              onClick={() => onUpdate('faceLock', !img.faceLock)}
-              disabled={disabled}
+            <button type="button" onClick={() => onUpdate('faceLock', !img.faceLock)} disabled={disabled}
               title="Alle Gesichtsmerkmale pixelgenau erhalten"
-              className={img.faceLock ? 'chip-lock-active' : 'chip-lock'}
-            >
+              className={img.faceLock ? 'chip-lock-active' : 'chip-lock'}>
               <svg className="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                 <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2}
                   d="M16 7a4 4 0 11-8 0 4 4 0 018 0zM12 14a7 7 0 00-7 7h14a7 7 0 00-7-7z" />
               </svg>
               Gesicht Lock
             </button>
-            <button
-              type="button"
-              onClick={() => onUpdate('objectLock', !img.objectLock)}
-              disabled={disabled}
+            <button type="button" onClick={() => onUpdate('objectLock', !img.objectLock)} disabled={disabled}
               title="Proportionen, Silhouette und Komposition exakt erhalten"
-              className={img.objectLock ? 'chip-lock-active' : 'chip-lock'}
-            >
+              className={img.objectLock ? 'chip-lock-active' : 'chip-lock'}>
               <svg className="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                 <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2}
                   d="M4 8V4m0 0h4M4 4l5 5m11-1V4m0 0h-4m4 0l-5 5M4 16v4m0 0h4m-4 0l5-5m11 5l-5-5m5 5v-4m0 4h-4" />
@@ -127,21 +90,14 @@ function ImageCard({
             </button>
           </div>
         </div>
-
-        {/* Remove button */}
-        <button
-          onClick={onRemove}
-          disabled={disabled}
+        <button onClick={onRemove} disabled={disabled}
           className="flex-shrink-0 p-1.5 rounded-lg text-ink-300 hover:text-red-500 hover:bg-red-50 transition-all duration-150"
-          title="Entfernen"
-        >
+          title="Entfernen">
           <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
             <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
           </svg>
         </button>
       </div>
-
-      {/* Custom lock field */}
       <div className="relative">
         <div className="absolute left-3 top-1/2 -translate-y-1/2 flex items-center gap-1 pointer-events-none">
           <svg className="w-3 h-3 text-blue-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -150,27 +106,20 @@ function ImageCard({
           </svg>
           <span className="text-blue-500 text-[11px] font-display font-bold">Lock:</span>
         </div>
-        <input
-          type="text"
-          value={img.customLock}
-          onChange={(e) => onUpdate('customLock', e.target.value)}
-          disabled={disabled}
-          placeholder="z.B. Tattoo linker Arm, rotes Kleid, Schmuck…"
-          className="input-field text-xs pl-[68px] py-2"
-        />
+        <input type="text" value={img.customLock} onChange={(e) => onUpdate('customLock', e.target.value)}
+          disabled={disabled} placeholder="z.B. Tattoo linker Arm, rotes Kleid, Schmuck…"
+          className="input-field text-xs pl-[68px] py-2" />
       </div>
     </div>
   )
 }
 
-// ── Upload zone ───────────────────────────────────────────────────────────────
+// ── Upload Zone ───────────────────────────────────────────────────────────────
 function UploadZone({
   images, onAdd, onRemove, onClear, onUpdateImage, disabled,
 }: {
-  images: UploadedImage[]
-  onAdd: (files: FileList | File[]) => void
-  onRemove: (id: string) => void
-  onClear: () => void
+  images: UploadedImage[]; onAdd: (files: FileList | File[]) => void
+  onRemove: (id: string) => void; onClear: () => void
   onUpdateImage: (id: string, field: 'faceLock' | 'objectLock' | 'customLock', value: boolean | string) => void
   disabled?: boolean
 }) {
@@ -178,8 +127,7 @@ function UploadZone({
   const [dragging, setDragging] = useState(false)
 
   const handleDrop = (e: React.DragEvent) => {
-    e.preventDefault()
-    setDragging(false)
+    e.preventDefault(); setDragging(false)
     if (!disabled) onAdd(e.dataTransfer.files)
   }
   const handleDragOver = (e: React.DragEvent) => { e.preventDefault(); if (!disabled) setDragging(true) }
@@ -187,34 +135,14 @@ function UploadZone({
 
   return (
     <div className="flex flex-col gap-3">
-      {/* Drop zone */}
-      <div
-        onDrop={handleDrop}
-        onDragOver={handleDragOver}
-        onDragLeave={handleDragLeave}
+      <div onDrop={handleDrop} onDragOver={handleDragOver} onDragLeave={handleDragLeave}
         onClick={() => !disabled && inputRef.current?.click()}
-        className={`
-          relative flex flex-col items-center justify-center gap-4
-          border-2 border-dashed rounded-2xl cursor-pointer select-none
-          transition-all duration-200
+        className={`relative flex flex-col items-center justify-center gap-4 border-2 border-dashed rounded-2xl cursor-pointer select-none transition-all duration-200
           ${images.length > 0 ? 'p-5' : 'p-10'}
-          ${dragging
-            ? 'drop-zone-active'
-            : 'border-cream-300 bg-cream-50 hover:border-banana-300 hover:bg-banana-50/50'
-          }
-          ${disabled ? 'opacity-50 cursor-not-allowed' : ''}
-        `}
-      >
-        <input
-          ref={inputRef}
-          type="file"
-          accept="image/*"
-          multiple
-          className="hidden"
-          onChange={(e) => { if (e.target.files) onAdd(e.target.files); e.target.value = '' }}
-          disabled={disabled}
-        />
-
+          ${dragging ? 'drop-zone-active' : 'border-cream-300 bg-cream-50 hover:border-banana-300 hover:bg-banana-50/50'}
+          ${disabled ? 'opacity-50 cursor-not-allowed' : ''}`}>
+        <input ref={inputRef} type="file" accept="image/*" multiple className="hidden"
+          onChange={(e) => { if (e.target.files) onAdd(e.target.files); e.target.value = '' }} disabled={disabled} />
         {images.length === 0 ? (
           <>
             <div className={`w-16 h-16 rounded-2xl flex items-center justify-center transition-all duration-200 ${dragging ? 'bg-banana-100' : 'bg-white shadow-card'}`}>
@@ -241,27 +169,22 @@ function UploadZone({
           </div>
         )}
       </div>
-
-      {/* Per-image cards */}
       {images.length > 0 && (
         <div className="flex flex-col gap-2 animate-slide-up">
           <div className="flex items-center justify-between px-1">
             <span className="text-xs font-sans text-ink-400">
               {images.length} Bild{images.length !== 1 ? 'er' : ''} — je Bild Lock-Regeln setzen
             </span>
-            <button onClick={onClear} disabled={disabled} className="btn-ghost text-xs py-1 px-2 text-red-400 hover:text-red-600 hover:bg-red-50">
+            <button onClick={onClear} disabled={disabled}
+              className="btn-ghost text-xs py-1 px-2 text-red-400 hover:text-red-600 hover:bg-red-50">
               Alle entfernen
             </button>
           </div>
           {images.map((img, index) => (
-            <ImageCard
-              key={img.id}
-              img={img}
-              index={index}
+            <ImageCard key={img.id} img={img} index={index}
               onRemove={() => onRemove(img.id)}
               onUpdate={(field, value) => onUpdateImage(img.id, field, value)}
-              disabled={disabled}
-            />
+              disabled={disabled} />
           ))}
         </div>
       )}
@@ -269,8 +192,18 @@ function UploadZone({
   )
 }
 
-// ── Main App ─────────────────────────────────────────────────────────────────
-export default function App() {
+// ── Job Panel (self-contained per-job state + UI) ─────────────────────────────
+function JobPanel({
+  jobIndex,
+  onAdd,
+  onRemove,
+  canRemove,
+}: {
+  jobIndex: number
+  onAdd: () => void
+  onRemove: () => void
+  canRemove: boolean
+}) {
   const [images, setImages] = useState<UploadedImage[]>([])
   const [userDescription, setUserDescription] = useState('')
   const [promptMode, setPromptMode] = useState<PromptMode>('retouch')
@@ -284,62 +217,38 @@ export default function App() {
   const [generatedModel, setGeneratedModel] = useState<string | undefined>()
   const [selectedModel, setSelectedModel] = useState<'flash' | 'pro'>('flash')
   const [selectedResolution, setSelectedResolution] = useState<'1K' | '2K' | '4K'>('2K')
-  // Quick generator (always visible, no prompt generation needed)
-  const [quickPrompt, setQuickPrompt] = useState('')
-  const [quickModel, setQuickModel] = useState<'flash' | 'pro'>('flash')
-  const [quickResolution, setQuickResolution] = useState<'1K' | '2K' | '4K'>('2K')
-  const [quickAspectRatio, setQuickAspectRatio] = useState('1:1')
-  const [quickOpen, setQuickOpen] = useState(false)
-  const [quickStatus, setQuickStatus] = useState<GenerationStatus>('idle')
-  const [quickError, setQuickError] = useState<string | null>(null)
-  const [quickImage, setQuickImage] = useState<string | null>(null)
 
   const addImages = useCallback((files: FileList | File[]) => {
     const accepted = Array.from(files).filter((f) => f.type.startsWith('image/'))
-    const newImgs = accepted.map(createUploadedImage)
-    setImages((prev) => [...prev, ...newImgs])
+    setImages((prev) => [...prev, ...accepted.map(createUploadedImage)])
   }, [])
 
   const removeImage = useCallback((id: string) => {
-    setImages((prev) => {
-      const img = prev.find((i) => i.id === id)
-      if (img) URL.revokeObjectURL(img.preview)
-      return prev.filter((i) => i.id !== id)
-    })
+    setImages((prev) => { const img = prev.find((i) => i.id === id); if (img) URL.revokeObjectURL(img.preview); return prev.filter((i) => i.id !== id) })
   }, [])
 
   const clearImages = useCallback(() => {
     setImages((prev) => { prev.forEach((i) => URL.revokeObjectURL(i.preview)); return [] })
   }, [])
 
-  const updateImageSetting = useCallback((
-    id: string,
-    field: 'faceLock' | 'objectLock' | 'customLock',
-    value: boolean | string,
-  ) => {
+  const updateImageSetting = useCallback((id: string, field: 'faceLock' | 'objectLock' | 'customLock', value: boolean | string) => {
     setImages((prev) => prev.map((img) => img.id === id ? { ...img, [field]: value } : img))
   }, [])
 
+  const toggleChange = useCallback((area: FocusArea) =>
+    setChangeAreas((p) => p.includes(area) ? p.filter((a) => a !== area) : [...p, area]), [])
+
   const handleAnalyze = useCallback(async () => {
     if (images.length === 0 && promptMode !== 'generation') return
-    setAnalysisStatus('analyzing')
-    setAnalysisError(null)
-    setPrompt('')
-
+    setAnalysisStatus('analyzing'); setAnalysisError(null); setPrompt('')
     try {
       const compressed = await Promise.all(images.map((img) => compressImage(img.file)))
       const formData = new FormData()
       compressed.forEach((f) => formData.append('images', f))
-
-      // Send per-image settings as JSON
       const imageSettings = images.map((img) => ({
-        name: img.name,
-        faceLock: img.faceLock,
-        objectLock: img.objectLock,
-        customLock: img.customLock.trim(),
+        name: img.name, faceLock: img.faceLock, objectLock: img.objectLock, customLock: img.customLock.trim(),
       }))
       formData.append('imageSettings', JSON.stringify(imageSettings))
-
       if (userDescription.trim()) formData.append('userDescription', userDescription.trim())
       formData.append('promptMode', promptMode)
       if (changeAreas.length > 0) formData.append('changeAreas', changeAreas.join(','))
@@ -349,7 +258,6 @@ export default function App() {
         const err = await response.json().catch(() => ({ error: response.statusText }))
         throw new Error(err.error || `Server error: ${response.status}`)
       }
-
       const reader = response.body!.getReader()
       const decoder = new TextDecoder()
       let accumulated = ''
@@ -376,11 +284,8 @@ export default function App() {
 
   const handleGenerate = useCallback(async () => {
     if (!prompt.trim()) return
-    setGenerationStatus('generating')
-    setGenerationError(null)
-    setGeneratedImage(null)
+    setGenerationStatus('generating'); setGenerationError(null); setGeneratedImage(null)
     try {
-      // Convert uploaded reference images to base64 for Gemini visual anchor
       const referenceImages = await Promise.all(
         images.map((img) => compressImage(img.file).then(
           (compressed) => new Promise<{ mimeType: string; data: string }>((resolve) => {
@@ -388,21 +293,17 @@ export default function App() {
             reader.onload = () => {
               const dataUrl = reader.result as string
               const [header, data] = dataUrl.split(',')
-              const mimeType = header.match(/data:([^;]+)/)?.[1] ?? 'image/jpeg'
-              resolve({ mimeType, data })
+              resolve({ mimeType: header.match(/data:([^;]+)/)?.[1] ?? 'image/jpeg', data })
             }
             reader.readAsDataURL(compressed)
           }),
         ))
       )
-
       const res = await fetch('/api/generate', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
-          prompt: prompt.trim(),
-          model: selectedModel,
-          resolution: selectedResolution,
+          prompt: prompt.trim(), model: selectedModel, resolution: selectedResolution,
           referenceImages: referenceImages.length > 0 ? referenceImages : undefined,
         }),
       })
@@ -411,20 +312,239 @@ export default function App() {
         throw new Error(err.error || `Server error: ${res.status}`)
       }
       const data = await res.json()
-      setGeneratedImage(data.image)
-      setGeneratedModel(data.model)
-      setGenerationStatus('done')
+      setGeneratedImage(data.image); setGeneratedModel(data.model); setGenerationStatus('done')
     } catch (err) {
       setGenerationError(err instanceof Error ? err.message : 'Generierung fehlgeschlagen')
       setGenerationStatus('error')
     }
   }, [prompt, selectedModel, selectedResolution, images])
 
+  const canAnalyze = (images.length > 0 || promptMode === 'generation') && analysisStatus !== 'analyzing'
+  const canGenerate = prompt.trim().length > 0 && generationStatus !== 'generating'
+
+  return (
+    <div className="flex flex-col gap-5">
+      {/* Job divider (for jobs after the first) */}
+      {jobIndex > 0 && (
+        <div className="flex items-center gap-3 pt-2">
+          <div className="flex-1 h-px bg-cream-200" />
+          <span className="text-xs font-display font-bold text-ink-300 tracking-widest uppercase">Auftrag {jobIndex + 1}</span>
+          <div className="flex-1 h-px bg-cream-200" />
+        </div>
+      )}
+
+      {/* Upload Zone */}
+      {promptMode === 'generation' && images.length === 0 && (
+        <p className="text-center text-xs font-sans text-ink-400">
+          <span className="text-banana-600 font-medium">Optional:</span> Stil-Referenzbilder hochladen — oder einfach unten beschreiben.
+        </p>
+      )}
+      <UploadZone images={images} onAdd={addImages} onRemove={removeImage} onClear={clearImages}
+        onUpdateImage={updateImageSetting} disabled={analysisStatus === 'analyzing'} />
+
+      {/* Mode Toggle + Settings */}
+      <div className="card p-5 flex flex-col gap-5">
+
+        {/* Mode header with + and × */}
+        <div className="flex flex-col gap-2">
+          <div className="flex items-center justify-between">
+            <span className="label-section">Modus</span>
+            <div className="flex items-center gap-2">
+              <button onClick={onAdd} title="Neuen Auftrag hinzufügen"
+                className="w-7 h-7 rounded-full bg-banana-100 text-banana-600 hover:bg-banana-500 hover:text-white flex items-center justify-center transition-all duration-150 font-bold text-base shadow-sm">
+                +
+              </button>
+              {canRemove && (
+                <button onClick={onRemove} title="Diesen Auftrag entfernen"
+                  className="w-7 h-7 rounded-full bg-red-50 text-red-400 hover:bg-red-500 hover:text-white flex items-center justify-center transition-all duration-150 text-base shadow-sm">
+                  ×
+                </button>
+              )}
+            </div>
+          </div>
+          <div className="bg-cream-100 rounded-xl p-1 flex gap-1">
+            <button onClick={() => setPromptMode('retouch')} className={`mode-btn ${promptMode === 'retouch' ? 'mode-btn-active' : 'mode-btn-inactive'}`}>
+              <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 16l4.586-4.586a2 2 0 012.828 0L16 16m-2-2l1.586-1.586a2 2 0 012.828 0L20 14m-6-6h.01M6 20h12a2 2 0 002-2V6a2 2 0 00-2-2H6a2 2 0 00-2 2v12a2 2 0 002 2z" />
+              </svg>
+              Foto-Retusche
+            </button>
+            <button onClick={() => setPromptMode('generation')} className={`mode-btn ${promptMode === 'generation' ? 'mode-btn-active' : 'mode-btn-inactive'}`}>
+              <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 3v4M3 5h4M6 17v4m-2-2h4m5-16l2.286 6.857L21 12l-5.714 2.143L13 21l-2.286-6.857L5 12l5.714-2.143L13 3z" />
+              </svg>
+              Neu generieren
+            </button>
+          </div>
+        </div>
+
+        {/* Change areas */}
+        <div className="flex flex-col gap-2">
+          <div className="flex items-center justify-between">
+            <span className="label-section flex items-center gap-1.5">
+              <svg className="w-3 h-3 text-banana-500" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2.5} d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z" />
+              </svg>
+              Ändern (global)
+            </span>
+            {changeAreas.length > 0 && (
+              <button onClick={() => setChangeAreas([])} className="text-ink-400 hover:text-ink-700 text-xs font-sans transition-colors">leeren</button>
+            )}
+          </div>
+          <div className="flex flex-wrap gap-1.5">
+            {CHANGE_AREAS.map((area) => (
+              <button key={area.id} title={area.hint} onClick={() => toggleChange(area.id)}
+                disabled={analysisStatus === 'analyzing'}
+                className={changeAreas.includes(area.id) ? 'chip-change-active' : 'chip-change'}>
+                {area.icon} {area.label}
+              </button>
+            ))}
+          </div>
+        </div>
+
+        {/* Description */}
+        <div className="flex flex-col gap-2">
+          <span className="label-section">Was möchtest du machen?</span>
+          <textarea value={userDescription} onChange={(e) => setUserDescription(e.target.value)}
+            disabled={analysisStatus === 'analyzing'}
+            placeholder={promptMode === 'retouch'
+              ? 'z.B. Person aus Bild 1 behalten, aber Hintergrund von Bild 2 verwenden. Beleuchtung verbessern.'
+              : 'z.B. Ein Luxus-Hautpflegeprodukt auf Marmor, dramatisches Seitenlicht, tiefe Schatten, Editorial-Stil…'}
+            rows={4} className="input-field resize-none text-sm leading-relaxed" />
+        </div>
+
+        {/* CTA */}
+        <button onClick={handleAnalyze} disabled={!canAnalyze} className="btn-primary w-full py-4 text-base">
+          {analysisStatus === 'analyzing' ? (
+            <>
+              <svg className="w-5 h-5 animate-spin" fill="none" viewBox="0 0 24 24">
+                <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
+                <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z" />
+              </svg>
+              Claude analysiert…
+            </>
+          ) : (
+            <>
+              <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9.663 17h4.673M12 3v1m6.364 1.636l-.707.707M21 12h-1M4 12H3m3.343-5.657l-.707-.707m2.828 9.9a5 5 0 117.072 0l-.548.547A3.374 3.374 0 0014 18.469V19a2 2 0 11-4 0v-.531c0-.895-.356-1.754-.988-2.386l-.548-.547z" />
+              </svg>
+              Prompt generieren
+            </>
+          )}
+        </button>
+
+        {analysisStatus === 'error' && analysisError && (
+          <div className="bg-red-50 border border-red-200 rounded-xl p-4 animate-scale-in">
+            <p className="text-red-700 text-sm font-sans font-medium">Fehler beim Analysieren</p>
+            <p className="text-red-500 text-xs mt-1 font-sans leading-relaxed">{analysisError}</p>
+          </div>
+        )}
+
+        <div className="bg-banana-50 border border-banana-200 rounded-xl px-4 py-3">
+          <p className="text-ink-500 text-xs font-sans leading-relaxed">
+            <span className="text-banana-700 font-semibold">Claude Opus</span> analysiert deine Referenzbilder mit den gesetzten Lock-Regeln und erstellt einen strukturierten, detaillierten Prompt.
+          </p>
+        </div>
+      </div>
+
+      {/* Generated Prompt */}
+      {(analysisStatus === 'analyzing' || analysisStatus === 'done' || prompt) && (
+        <div className="card p-6 flex flex-col gap-4 animate-slide-up">
+          <div className="flex items-center justify-between">
+            <div>
+              <p className="label-step">Generierter Prompt</p>
+              <h3 className="font-display font-bold text-ink-900 text-lg mt-0.5">Strukturierter AI-Prompt</h3>
+            </div>
+            {analysisStatus === 'done' && (
+              <span className="text-xs font-sans bg-emerald-50 text-emerald-700 border border-emerald-200 px-2.5 py-1 rounded-full animate-fade-in">
+                ✓ Bereit
+              </span>
+            )}
+          </div>
+          <PromptDisplay prompt={prompt} onChange={setPrompt} status={analysisStatus} images={images} />
+        </div>
+      )}
+
+      {/* Image Generation */}
+      {(analysisStatus === 'done' || generationStatus !== 'idle') && (
+        <div className="card p-6 flex flex-col gap-4 animate-slide-up">
+          <div>
+            <p className="label-step">Bild generieren</p>
+            <h3 className="font-display font-bold text-ink-900 text-lg mt-0.5">KI-Bildgenerierung</h3>
+          </div>
+          <GeneratedImage imageDataUrl={generatedImage} status={generationStatus}
+            error={generationError} prompt={prompt} activeModel={generatedModel} />
+          <div className="grid grid-cols-2 gap-3">
+            <div className="flex flex-col gap-1.5">
+              <span className="label-section">Modell</span>
+              <div className="bg-cream-100 rounded-xl p-1 flex gap-1">
+                <button onClick={() => setSelectedModel('flash')} className={`mode-btn text-xs py-2 ${selectedModel === 'flash' ? 'mode-btn-active' : 'mode-btn-inactive'}`}>
+                  ⚡ Flash <span className="text-[10px] opacity-60 ml-0.5">schnell</span>
+                </button>
+                <button onClick={() => setSelectedModel('pro')} className={`mode-btn text-xs py-2 ${selectedModel === 'pro' ? 'mode-btn-active' : 'mode-btn-inactive'}`}>
+                  ✦ Pro <span className="text-[10px] opacity-60 ml-0.5">best</span>
+                </button>
+              </div>
+            </div>
+            <div className="flex flex-col gap-1.5">
+              <span className="label-section">Auflösung</span>
+              <div className="bg-cream-100 rounded-xl p-1 flex gap-1">
+                {(['1K', '2K', '4K'] as const).map((r) => (
+                  <button key={r} onClick={() => setSelectedResolution(r)} className={`mode-btn text-xs py-2 ${selectedResolution === r ? 'mode-btn-active' : 'mode-btn-inactive'}`}>
+                    {r}
+                  </button>
+                ))}
+              </div>
+            </div>
+          </div>
+          <button onClick={handleGenerate} disabled={!canGenerate} className="btn-primary w-full py-4 text-base">
+            {generationStatus === 'generating' ? (
+              <>
+                <svg className="w-5 h-5 animate-spin" fill="none" viewBox="0 0 24 24">
+                  <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
+                  <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z" />
+                </svg>
+                {selectedModel === 'flash' ? 'Gemini Flash 3.1 generiert…' : 'Nano Banana Pro generiert…'}
+              </>
+            ) : (
+              <>
+                <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 16l4.586-4.586a2 2 0 012.828 0L16 16m-2-2l1.586-1.586a2 2 0 012.828 0L20 14m-6-6h.01M6 20h12a2 2 0 002-2V6a2 2 0 00-2-2H6a2 2 0 00-2 2v12a2 2 0 002 2z" />
+                </svg>
+                {selectedModel === 'flash' ? 'mit Gemini Flash 3.1 generieren' : 'mit Nano Banana Pro generieren'}
+              </>
+            )}
+          </button>
+          {generationStatus === 'error' && generationError && (
+            <div className="bg-red-50 border border-red-200 rounded-xl p-4 animate-scale-in">
+              <p className="text-red-700 text-sm font-sans font-medium">Fehler bei der Generierung</p>
+              <p className="text-red-500 text-xs mt-1 font-sans leading-relaxed">{generationError}</p>
+            </div>
+          )}
+        </div>
+      )}
+    </div>
+  )
+}
+
+// ── Main App ──────────────────────────────────────────────────────────────────
+export default function App() {
+  const [jobs, setJobs] = useState<number[]>([Date.now()])
+  const [quickOpen, setQuickOpen] = useState(false)
+  const [quickPrompt, setQuickPrompt] = useState('')
+  const [quickModel, setQuickModel] = useState<'flash' | 'pro'>('flash')
+  const [quickResolution, setQuickResolution] = useState<'1K' | '2K' | '4K'>('2K')
+  const [quickAspectRatio, setQuickAspectRatio] = useState('1:1')
+  const [quickStatus, setQuickStatus] = useState<GenerationStatus>('idle')
+  const [quickError, setQuickError] = useState<string | null>(null)
+  const [quickImage, setQuickImage] = useState<string | null>(null)
+
+  const addJob = useCallback(() => setJobs((prev) => [...prev, Date.now()]), [])
+  const removeJob = useCallback((id: number) => setJobs((prev) => prev.filter((j) => j !== id)), [])
+
   const handleQuickGenerate = useCallback(async () => {
     if (!quickPrompt.trim()) return
-    setQuickStatus('generating')
-    setQuickError(null)
-    setQuickImage(null)
+    setQuickStatus('generating'); setQuickError(null); setQuickImage(null)
     try {
       const res = await fetch('/api/generate', {
         method: 'POST',
@@ -436,24 +556,17 @@ export default function App() {
         throw new Error(err.error || `Server error: ${res.status}`)
       }
       const data = await res.json()
-      setQuickImage(data.image)
-      setQuickStatus('done')
+      setQuickImage(data.image); setQuickStatus('done')
     } catch (err) {
       setQuickError(err instanceof Error ? err.message : 'Fehler')
       setQuickStatus('error')
     }
   }, [quickPrompt, quickModel, quickResolution, quickAspectRatio])
 
-  const toggleChange = useCallback((area: FocusArea) =>
-    setChangeAreas((p) => p.includes(area) ? p.filter((a) => a !== area) : [...p, area]), [])
-
-  const canAnalyze = (images.length > 0 || promptMode === 'generation') && analysisStatus !== 'analyzing'
-  const canGenerate = prompt.trim().length > 0 && generationStatus !== 'generating'
-
   return (
     <div className="min-h-dvh flex flex-col bg-cream-50">
 
-      {/* ── Header ──────────────────────────────────────────────────────────── */}
+      {/* ── Header ────────────────────────────────────────────────────────── */}
       <header className="sticky top-0 z-50 bg-white/80 backdrop-blur-md border-b border-cream-200">
         <div className="max-w-4xl mx-auto px-5 py-4 flex items-center justify-between">
           <div className="flex items-center gap-3">
@@ -468,391 +581,138 @@ export default function App() {
               <p className="text-ink-400 text-[11px] font-sans mt-0.5">Prompt · Retusche · Bildgenerierung</p>
             </div>
           </div>
-          <div className="flex items-center gap-2">
-            <button
-              onClick={() => setQuickOpen((o) => !o)}
-              className={`flex items-center gap-1.5 px-3 py-1.5 rounded-full border text-xs font-sans font-medium transition-all duration-150 ${quickOpen ? 'bg-banana-500 text-white border-banana-500 shadow-banana' : 'bg-white text-ink-500 border-cream-200 hover:border-banana-300 hover:text-banana-600 shadow-card'}`}
-            >
-              <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 10V3L4 14h7v7l9-11h-7z" />
-              </svg>
-              Quick Generate
-            </button>
-            <StatusPill status={analysisStatus} />
-          </div>
+          <button onClick={() => setQuickOpen((o) => !o)}
+            className={`flex items-center gap-1.5 px-3 py-1.5 rounded-full border text-xs font-sans font-medium transition-all duration-150 ${quickOpen ? 'bg-banana-500 text-white border-banana-500 shadow-banana' : 'bg-white text-ink-500 border-cream-200 hover:border-banana-300 hover:text-banana-600 shadow-card'}`}>
+            <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 10V3L4 14h7v7l9-11h-7z" />
+            </svg>
+            Quick Generate
+          </button>
         </div>
       </header>
 
-      {/* ── Hero ────────────────────────────────────────────────────────────── */}
+      {/* ── Hero ──────────────────────────────────────────────────────────── */}
       <div className="relative overflow-hidden bg-white border-b border-cream-200">
-        {/* Aurora blobs */}
-        <div className="aurora-blob w-[500px] h-[500px] bg-banana-200/60 animate-aurora-1"
-          style={{ top: '-200px', left: '-100px', opacity: 0.7 }} />
-        <div className="aurora-blob w-[400px] h-[400px] bg-amber-100/80 animate-aurora-2"
-          style={{ top: '-100px', right: '-80px', opacity: 0.6 }} />
-        <div className="aurora-blob w-[300px] h-[300px] bg-orange-100/60 animate-aurora-3"
-          style={{ bottom: '-100px', left: '40%', opacity: 0.5 }} />
-
-        <div className="relative z-10 max-w-4xl mx-auto px-5 pt-12 pb-10">
-          <div className="text-center mb-8">
-            <p className="label-step mb-3">AI Creative Studio</p>
-            <h2 className="font-display font-extrabold text-4xl sm:text-5xl text-ink-900 leading-[1.1] tracking-tight">
-              Prompt. Retuschieren.
-              <br />
-              <span className="text-banana-500">Bilder generieren.</span>
-            </h2>
-            <p className="text-ink-400 font-sans text-base mt-4 max-w-lg mx-auto leading-relaxed">
-              Referenzbilder hochladen · Lock-Regeln setzen · Claude generiert den Prompt · Gemini rendert das Bild.
-            </p>
-          </div>
-
-          {/* Upload Zone */}
-          {promptMode === 'generation' && (
-            <p className="text-center text-xs font-sans text-ink-400 -mb-1">
-              <span className="text-banana-600 font-medium">Optional:</span> Stil-Referenzbilder hochladen — oder einfach unten beschreiben, was generiert werden soll.
-            </p>
-          )}
-          <UploadZone
-            images={images}
-            onAdd={addImages}
-            onRemove={removeImage}
-            onClear={clearImages}
-            onUpdateImage={updateImageSetting}
-            disabled={analysisStatus === 'analyzing'}
-          />
+        <div className="aurora-blob w-[500px] h-[500px] bg-banana-200/60 animate-aurora-1" style={{ top: '-200px', left: '-100px', opacity: 0.7 }} />
+        <div className="aurora-blob w-[400px] h-[400px] bg-amber-100/80 animate-aurora-2" style={{ top: '-100px', right: '-80px', opacity: 0.6 }} />
+        <div className="aurora-blob w-[300px] h-[300px] bg-orange-100/60 animate-aurora-3" style={{ bottom: '-100px', left: '40%', opacity: 0.5 }} />
+        <div className="relative z-10 max-w-4xl mx-auto px-5 pt-10 pb-8 text-center">
+          <p className="label-step mb-3">AI Creative Studio</p>
+          <h2 className="font-display font-extrabold text-4xl sm:text-5xl text-ink-900 leading-[1.1] tracking-tight">
+            Prompt. Retuschieren.
+            <br />
+            <span className="text-banana-500">Bilder generieren.</span>
+          </h2>
+          <p className="text-ink-400 font-sans text-base mt-4 max-w-lg mx-auto leading-relaxed">
+            Referenzbilder hochladen · Lock-Regeln setzen · Claude generiert den Prompt · Gemini rendert das Bild.
+          </p>
         </div>
       </div>
 
-      {/* ── Controls ────────────────────────────────────────────────────────── */}
+      {/* ── Main ──────────────────────────────────────────────────────────── */}
       <main className="max-w-4xl mx-auto w-full px-5 py-8 flex flex-col gap-6">
 
-        {/* Mode Toggle + Settings Card */}
-        <div className="card p-5 flex flex-col gap-5 animate-slide-up">
-
-          {/* Mode toggle */}
-          <div className="flex flex-col gap-2">
-            <span className="label-section">Modus</span>
-            <div className="bg-cream-100 rounded-xl p-1 flex gap-1">
-              <button onClick={() => setPromptMode('retouch')} className={`mode-btn ${promptMode === 'retouch' ? 'mode-btn-active' : 'mode-btn-inactive'}`}>
-                <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 16l4.586-4.586a2 2 0 012.828 0L16 16m-2-2l1.586-1.586a2 2 0 012.828 0L20 14m-6-6h.01M6 20h12a2 2 0 002-2V6a2 2 0 00-2-2H6a2 2 0 00-2 2v12a2 2 0 002 2z" />
-                </svg>
-                Foto-Retusche
-              </button>
-              <button onClick={() => setPromptMode('generation')} className={`mode-btn ${promptMode === 'generation' ? 'mode-btn-active' : 'mode-btn-inactive'}`}>
-                <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 3v4M3 5h4M6 17v4m-2-2h4m5-16l2.286 6.857L21 12l-5.714 2.143L13 21l-2.286-6.857L5 12l5.714-2.143L13 3z" />
-                </svg>
-                Neu generieren
-              </button>
-            </div>
-          </div>
-
-          {/* Change areas — global */}
-          <div className="flex flex-col gap-2">
-            <div className="flex items-center justify-between">
-              <span className="label-section flex items-center gap-1.5">
-                <svg className="w-3 h-3 text-banana-500" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2.5} d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z" />
-                </svg>
-                Ändern (global)
-              </span>
-              {changeAreas.length > 0 && (
-                <button onClick={() => setChangeAreas([])} className="text-ink-400 hover:text-ink-700 text-xs font-sans transition-colors">leeren</button>
-              )}
-            </div>
-            <div className="flex flex-wrap gap-1.5">
-              {CHANGE_AREAS.map((area) => (
-                <button key={area.id} title={area.hint}
-                  onClick={() => toggleChange(area.id)}
-                  disabled={analysisStatus === 'analyzing'}
-                  className={changeAreas.includes(area.id) ? 'chip-change-active' : 'chip-change'}
-                >
-                  {area.icon} {area.label}
-                </button>
-              ))}
-            </div>
-          </div>
-
-          {/* Description */}
-          <div className="flex flex-col gap-2">
-            <span className="label-section">Was möchtest du machen?</span>
-            <textarea
-              value={userDescription}
-              onChange={(e) => setUserDescription(e.target.value)}
-              disabled={analysisStatus === 'analyzing'}
-              placeholder={promptMode === 'retouch'
-                ? 'z.B. Person aus Bild 1 behalten, aber Hintergrund von Bild 2 verwenden. Beleuchtung verbessern. Oder: Kopf von Bild 2 auf den Körper von Bild 1 setzen.'
-                : 'z.B. Ein Luxus-Hautpflegeprodukt auf Marmor, dramatisches Seitenlicht, tiefe Schatten, Editorial-Stil…'
-              }
-              rows={4}
-              className="input-field resize-none text-sm leading-relaxed"
-            />
-          </div>
-
-          {/* CTA Button */}
-          <button
-            onClick={handleAnalyze}
-            disabled={!canAnalyze}
-            className="btn-primary w-full py-4 text-base"
-          >
-            {analysisStatus === 'analyzing' ? (
-              <>
-                <svg className="w-5 h-5 animate-spin" fill="none" viewBox="0 0 24 24">
-                  <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
-                  <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z" />
-                </svg>
-                Claude analysiert…
-              </>
-            ) : (
-              <>
-                <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9.663 17h4.673M12 3v1m6.364 1.636l-.707.707M21 12h-1M4 12H3m3.343-5.657l-.707-.707m2.828 9.9a5 5 0 117.072 0l-.548.547A3.374 3.374 0 0014 18.469V19a2 2 0 11-4 0v-.531c0-.895-.356-1.754-.988-2.386l-.548-.547z" />
-                </svg>
-                Prompt generieren
-              </>
-            )}
-          </button>
-
-          {/* Error state */}
-          {analysisStatus === 'error' && analysisError && (
-            <div className="bg-red-50 border border-red-200 rounded-xl p-4 animate-scale-in">
-              <p className="text-red-700 text-sm font-sans font-medium">Fehler beim Analysieren</p>
-              <p className="text-red-500 text-xs mt-1 font-sans leading-relaxed">{analysisError}</p>
-            </div>
-          )}
-
-          {/* Info hint */}
-          <div className="bg-banana-50 border border-banana-200 rounded-xl px-4 py-3">
-            <p className="text-ink-500 text-xs font-sans leading-relaxed">
-              <span className="text-banana-700 font-semibold">Claude Opus</span> analysiert deine Referenzbilder mit den gesetzten Lock-Regeln und erstellt einen strukturierten, detaillierten Prompt — bereit für{' '}
-              <span className="text-ink-700 font-medium">Nano Banana Pro</span> oder jedes andere KI-Bildtool.
-            </p>
-          </div>
-        </div>
-
-        {/* ── Quick Generator ──────────────────────────────────────────────── */}
-        {quickOpen && <div className="card p-5 flex flex-col gap-4 animate-slide-up">
-          <div>
-            <p className="label-step">Schnell generieren</p>
-            <h3 className="font-display font-bold text-ink-900 text-lg mt-0.5">Bild direkt erstellen</h3>
-          </div>
-
-          {/* Prompt input */}
-          <div className="flex gap-2">
-            <input
-              type="text"
-              value={quickPrompt}
-              onChange={(e) => setQuickPrompt(e.target.value)}
-              onKeyDown={(e) => e.key === 'Enter' && quickPrompt.trim() && quickStatus !== 'generating' && handleQuickGenerate()}
-              disabled={quickStatus === 'generating'}
-              placeholder="z.B. golden hour portrait, studio product shot, futuristic city…"
-              className="input-field flex-1 text-sm"
-            />
-            <button
-              onClick={handleQuickGenerate}
-              disabled={!quickPrompt.trim() || quickStatus === 'generating'}
-              className="btn-primary px-5 py-3 text-sm whitespace-nowrap"
-            >
-              {quickStatus === 'generating' ? (
-                <svg className="w-4 h-4 animate-spin" fill="none" viewBox="0 0 24 24">
-                  <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
-                  <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z" />
-                </svg>
-              ) : (
-                <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 10V3L4 14h7v7l9-11h-7z" />
-                </svg>
-              )}
-              {quickStatus === 'generating' ? 'Lädt…' : 'Generieren'}
-            </button>
-          </div>
-
-          {/* Model + Resolution + Ratio */}
-          <div className="grid grid-cols-3 gap-2">
-            <div className="flex flex-col gap-1">
-              <span className="label-section text-[10px]">Modell</span>
-              <div className="bg-cream-100 rounded-xl p-0.5 flex gap-0.5">
-                {(['flash', 'pro'] as const).map((m) => (
-                  <button key={m} onClick={() => setQuickModel(m)}
-                    className={`mode-btn text-xs py-1.5 ${quickModel === m ? 'mode-btn-active' : 'mode-btn-inactive'}`}>
-                    {m === 'flash' ? '⚡ Flash' : '✦ Pro'}
-                  </button>
-                ))}
-              </div>
-            </div>
-            <div className="flex flex-col gap-1">
-              <span className="label-section text-[10px]">Auflösung</span>
-              <div className="bg-cream-100 rounded-xl p-0.5 flex gap-0.5">
-                {(['1K', '2K', '4K'] as const).map((r) => (
-                  <button key={r} onClick={() => setQuickResolution(r)}
-                    className={`mode-btn text-xs py-1.5 ${quickResolution === r ? 'mode-btn-active' : 'mode-btn-inactive'}`}>
-                    {r}
-                  </button>
-                ))}
-              </div>
-            </div>
-            <div className="flex flex-col gap-1">
-              <span className="label-section text-[10px]">Format</span>
-              <div className="bg-cream-100 rounded-xl p-0.5 flex gap-0.5 flex-wrap">
-                {(['1:1', '16:9', '9:16', '4:3', '3:4', '4:5', '5:4'] as const).map((r) => (
-                  <button key={r} onClick={() => setQuickAspectRatio(r)}
-                    className={`mode-btn text-xs py-1.5 ${quickAspectRatio === r ? 'mode-btn-active' : 'mode-btn-inactive'}`}>
-                    {r}
-                  </button>
-                ))}
-              </div>
-            </div>
-          </div>
-
-          {/* Result */}
-          {quickStatus === 'error' && quickError && (
-            <div className="bg-red-50 border border-red-200 rounded-xl p-3 text-red-600 text-xs animate-scale-in">{quickError}</div>
-          )}
-          {quickImage && (
-            <div className="relative rounded-2xl overflow-hidden bg-cream-100 animate-scale-in">
-              <img src={quickImage} alt="Generated" className="w-full object-contain max-h-[500px]" />
-              <div className="absolute bottom-3 right-3 flex gap-2">
-                <button
-                  onClick={() => { const a = document.createElement('a'); a.href = quickImage!; a.download = `quick-${Date.now()}.jpg`; a.click() }}
-                  className="btn-primary py-2 px-3 text-xs"
-                >
-                  <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4" />
-                  </svg>
-                  Speichern
-                </button>
-              </div>
-            </div>
-          )}
-        </div>}
-
-        {/* ── Generated Prompt ─────────────────────────────────────────────── */}
-        {(analysisStatus === 'analyzing' || analysisStatus === 'done' || prompt) && (
-          <div className="card p-6 flex flex-col gap-4 animate-slide-up">
-            <div className="flex items-center justify-between">
-              <div>
-                <p className="label-step">Schritt 3</p>
-                <h3 className="font-display font-bold text-ink-900 text-lg mt-0.5">Generierter Prompt</h3>
-              </div>
-              {analysisStatus === 'done' && (
-                <span className="text-xs font-sans bg-emerald-50 text-emerald-700 border border-emerald-200 px-2.5 py-1 rounded-full animate-fade-in">
-                  ✓ Bereit
-                </span>
-              )}
-            </div>
-            <PromptDisplay
-              prompt={prompt}
-              onChange={setPrompt}
-              status={analysisStatus}
-              images={images}
-            />
-          </div>
-        )}
-
-        {/* ── Image Generation ─────────────────────────────────────────────── */}
-        {(analysisStatus === 'done' || generationStatus !== 'idle') && (
-          <div className="card p-6 flex flex-col gap-4 animate-slide-up">
+        {/* Quick Generator */}
+        {quickOpen && (
+          <div className="card p-5 flex flex-col gap-4 animate-slide-up">
             <div>
-              <p className="label-step">Schritt 4</p>
-              <h3 className="font-display font-bold text-ink-900 text-lg mt-0.5">Bild generieren</h3>
+              <p className="label-step">Schnell generieren</p>
+              <h3 className="font-display font-bold text-ink-900 text-lg mt-0.5">Bild direkt erstellen</h3>
             </div>
-
-            <GeneratedImage
-              imageDataUrl={generatedImage}
-              status={generationStatus}
-              error={generationError}
-              prompt={prompt}
-              activeModel={generatedModel}
-            />
-
-            {/* Model + Resolution selectors */}
-            <div className="grid grid-cols-2 gap-3">
-              <div className="flex flex-col gap-1.5">
-                <span className="label-section">Modell</span>
-                <div className="bg-cream-100 rounded-xl p-1 flex gap-1">
-                  <button onClick={() => setSelectedModel('flash')} className={`mode-btn text-xs py-2 ${selectedModel === 'flash' ? 'mode-btn-active' : 'mode-btn-inactive'}`}>
-                    ⚡ Flash
-                    <span className="text-[10px] opacity-60 ml-0.5">schnell</span>
-                  </button>
-                  <button onClick={() => setSelectedModel('pro')} className={`mode-btn text-xs py-2 ${selectedModel === 'pro' ? 'mode-btn-active' : 'mode-btn-inactive'}`}>
-                    ✦ Pro
-                    <span className="text-[10px] opacity-60 ml-0.5">best</span>
-                  </button>
+            <div className="flex gap-2">
+              <input type="text" value={quickPrompt} onChange={(e) => setQuickPrompt(e.target.value)}
+                onKeyDown={(e) => e.key === 'Enter' && quickPrompt.trim() && quickStatus !== 'generating' && handleQuickGenerate()}
+                disabled={quickStatus === 'generating'}
+                placeholder="z.B. golden hour portrait, studio product shot, futuristic city…"
+                className="input-field flex-1 text-sm" />
+              <button onClick={handleQuickGenerate} disabled={!quickPrompt.trim() || quickStatus === 'generating'}
+                className="btn-primary px-5 py-3 text-sm whitespace-nowrap">
+                {quickStatus === 'generating' ? (
+                  <svg className="w-4 h-4 animate-spin" fill="none" viewBox="0 0 24 24">
+                    <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
+                    <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z" />
+                  </svg>
+                ) : (
+                  <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 10V3L4 14h7v7l9-11h-7z" />
+                  </svg>
+                )}
+                {quickStatus === 'generating' ? 'Lädt…' : 'Generieren'}
+              </button>
+            </div>
+            <div className="grid grid-cols-3 gap-2">
+              <div className="flex flex-col gap-1">
+                <span className="label-section text-[10px]">Modell</span>
+                <div className="bg-cream-100 rounded-xl p-0.5 flex gap-0.5">
+                  {(['flash', 'pro'] as const).map((m) => (
+                    <button key={m} onClick={() => setQuickModel(m)}
+                      className={`mode-btn text-xs py-1.5 ${quickModel === m ? 'mode-btn-active' : 'mode-btn-inactive'}`}>
+                      {m === 'flash' ? '⚡ Flash' : '✦ Pro'}
+                    </button>
+                  ))}
                 </div>
               </div>
-              <div className="flex flex-col gap-1.5">
-                <span className="label-section">Auflösung</span>
-                <div className="bg-cream-100 rounded-xl p-1 flex gap-1">
+              <div className="flex flex-col gap-1">
+                <span className="label-section text-[10px]">Auflösung</span>
+                <div className="bg-cream-100 rounded-xl p-0.5 flex gap-0.5">
                   {(['1K', '2K', '4K'] as const).map((r) => (
-                    <button key={r} onClick={() => setSelectedResolution(r)} className={`mode-btn text-xs py-2 ${selectedResolution === r ? 'mode-btn-active' : 'mode-btn-inactive'}`}>
+                    <button key={r} onClick={() => setQuickResolution(r)}
+                      className={`mode-btn text-xs py-1.5 ${quickResolution === r ? 'mode-btn-active' : 'mode-btn-inactive'}`}>
+                      {r}
+                    </button>
+                  ))}
+                </div>
+              </div>
+              <div className="flex flex-col gap-1">
+                <span className="label-section text-[10px]">Format</span>
+                <div className="bg-cream-100 rounded-xl p-0.5 flex gap-0.5 flex-wrap">
+                  {(['1:1', '16:9', '9:16', '4:3', '3:4', '4:5', '5:4'] as const).map((r) => (
+                    <button key={r} onClick={() => setQuickAspectRatio(r)}
+                      className={`mode-btn text-xs py-1.5 ${quickAspectRatio === r ? 'mode-btn-active' : 'mode-btn-inactive'}`}>
                       {r}
                     </button>
                   ))}
                 </div>
               </div>
             </div>
-
-            <button
-              onClick={handleGenerate}
-              disabled={!canGenerate}
-              className="btn-primary w-full py-4 text-base"
-            >
-              {generationStatus === 'generating' ? (
-                <>
-                  <svg className="w-5 h-5 animate-spin" fill="none" viewBox="0 0 24 24">
-                    <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
-                    <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z" />
-                  </svg>
-                  {selectedModel === 'flash' ? 'Gemini Flash 3.1 generiert…' : 'Nano Banana Pro generiert…'}
-                </>
-              ) : (
-                <>
-                  <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 16l4.586-4.586a2 2 0 012.828 0L16 16m-2-2l1.586-1.586a2 2 0 012.828 0L20 14m-6-6h.01M6 20h12a2 2 0 002-2V6a2 2 0 00-2-2H6a2 2 0 00-2 2v12a2 2 0 002 2z" />
-                  </svg>
-                  {selectedModel === 'flash' ? 'mit Gemini Flash 3.1 generieren' : 'mit Nano Banana Pro generieren'}
-                </>
-              )}
-            </button>
-
-            {generationStatus === 'error' && generationError && (
-              <div className="bg-red-50 border border-red-200 rounded-xl p-4 animate-scale-in">
-                <p className="text-red-700 text-sm font-sans font-medium">Fehler bei der Generierung</p>
-                <p className="text-red-500 text-xs mt-1 font-sans leading-relaxed">{generationError}</p>
+            {quickStatus === 'error' && quickError && (
+              <div className="bg-red-50 border border-red-200 rounded-xl p-3 text-red-600 text-xs animate-scale-in">{quickError}</div>
+            )}
+            {quickImage && (
+              <div className="relative rounded-2xl overflow-hidden bg-cream-100 animate-scale-in">
+                <img src={quickImage} alt="Generated" className="w-full object-contain max-h-[500px]" />
+                <div className="absolute bottom-3 right-3">
+                  <button onClick={() => { const a = document.createElement('a'); a.href = quickImage!; a.download = `quick-${Date.now()}.jpg`; a.click() }}
+                    className="btn-primary py-2 px-3 text-xs">
+                    <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4" />
+                    </svg>
+                    Speichern
+                  </button>
+                </div>
               </div>
             )}
           </div>
         )}
 
-        {/* ── How it works ─────────────────────────────────────────────────── */}
-        {analysisStatus === 'idle' && !prompt && (
-          <div className="grid grid-cols-1 sm:grid-cols-3 gap-4 animate-fade-in">
-            {[
-              { step: '01', icon: '🖼️', title: 'Bilder hochladen', desc: 'Lade ein oder mehrere Fotos hoch. Jedes Bild bekommt eine Nummer und eigene Lock-Regeln.' },
-              { step: '02', icon: '🔒', title: 'Locks & Änderungen', desc: 'Setze Face/Objekt-Lock pro Bild. Beschreibe was sich ändern soll — auch bildspezifisch.' },
-              { step: '03', icon: '✨', title: 'Prompt kopieren', desc: 'Claude erstellt einen strukturierten Prompt mit expliziten Bild-Referenzen und Lock-Regeln.' },
-            ].map((s) => (
-              <div key={s.step} className="card p-5 flex flex-col gap-3">
-                <div className="flex items-center justify-between">
-                  <span className="text-2xl">{s.icon}</span>
-                  <span className="font-display font-bold text-4xl text-cream-300">{s.step}</span>
-                </div>
-                <div>
-                  <h4 className="font-display font-bold text-ink-800 text-sm">{s.title}</h4>
-                  <p className="text-ink-400 text-xs font-sans mt-1 leading-relaxed">{s.desc}</p>
-                </div>
-              </div>
-            ))}
-          </div>
-        )}
+        {/* Job Panels */}
+        {jobs.map((id, idx) => (
+          <JobPanel
+            key={id}
+            jobIndex={idx}
+            onAdd={addJob}
+            onRemove={() => removeJob(id)}
+            canRemove={jobs.length > 1}
+          />
+        ))}
+
       </main>
 
-      {/* ── Footer ──────────────────────────────────────────────────────────── */}
+      {/* ── Footer ────────────────────────────────────────────────────────── */}
       <footer className="border-t border-cream-200 bg-white mt-auto">
         <div className="max-w-4xl mx-auto px-5 py-4 flex items-center justify-between">
-          <p className="text-ink-300 text-xs font-sans">🍌 Nano Banana Prompt Engineer</p>
-          <p className="text-ink-300 text-xs font-sans">Claude Opus Vision · Gemini 2.0 Flash</p>
+          <p className="text-ink-300 text-xs font-sans">🍌 Nano Banana AI Studio</p>
+          <p className="text-ink-300 text-xs font-sans">Claude Opus Vision · Gemini Flash & Pro</p>
         </div>
       </footer>
     </div>
