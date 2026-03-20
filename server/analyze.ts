@@ -195,37 +195,67 @@ Start directly with the header line — no preamble.`
   // ── MOCKUP MODE ────────────────────────────────────────────────────────────
   if (isMockup) {
     const typeLabels: Record<string, string> = {
-      folder: 'folder / document folder', flyer: 'DIN A5 flyer', billboard: 'outdoor billboard / large-format poster',
-      webseite: 'website / browser mockup', tshirt: 'T-shirt', tasse: 'coffee mug',
-      buch: 'hardcover book', visitenkarte: 'business card', flasche: 'bottle / packaging', verpackung: 'product packaging box',
+      folder: 'premium document folder / presentation folder',
+      flyer: 'DIN A5 printed flyer',
+      billboard: 'large-format outdoor billboard / citylight poster',
+      webseite: 'laptop or desktop browser screen mockup',
+      tshirt: 'folded or worn T-shirt',
+      tasse: 'ceramic coffee mug',
+      buch: 'hardcover book or magazine',
+      visitenkarte: 'business card on a surface',
+      flasche: 'premium bottle or tube packaging',
+      verpackung: 'product packaging box',
     }
     const typeLabel = mockupType ? typeLabels[mockupType] ?? mockupType : null
     const mockupTarget = typeLabel
-      ? `Place the uploaded artwork/design/logo into a photorealistic ${typeLabel} mockup.`
+      ? `Create a high-end studio mockup: place the uploaded artwork/design exactly onto a ${typeLabel}.`
       : userDescription?.trim()
-        ? `Create a mockup for: "${userDescription.trim()}"`
-        : `Create a photorealistic product mockup for the uploaded design.`
-    const envNote = mockupEnvironment === 'dark'
-      ? 'Environment: dark/moody studio — deep shadows, dark background, accent lighting.'
-      : mockupEnvironment === 'light'
-        ? 'Environment: bright/clean studio — white or light neutral background, soft even lighting.'
-        : 'Environment: clean neutral studio lighting, choose what suits the mockup best.'
-    const extraDesc = typeLabel && userDescription?.trim() ? `\nAdditional instructions: "${userDescription.trim()}"` : ''
+        ? `Create a high-end studio product mockup for: "${userDescription.trim()}"`
+        : `Create a high-end studio product mockup for the uploaded design.`
 
-    return `MOCKUP GENERATION — place the uploaded design into a product mockup.
+    const envNote = mockupEnvironment === 'dark'
+      ? `ENVIRONMENT — DARK STUDIO:
+— Background: deep charcoal or near-black (#0d0d0d–#1a1a1a), seamless infinity curve.
+— Key light: single hard-edge spot or snooted strobe from upper-right, casting a crisp dramatic shadow to the left.
+— Fill: minimal, dark side stays dark — ratio approximately 5:1 key-to-fill or harder.
+— Rim/separation light: subtle cool-toned backlight outlining the object edge.
+— Surface: dark matte or polished stone/acrylic — faint specular reflection of the object visible.
+— Mood: editorial dark luxury — think high-fashion or premium spirits photography.`
+      : mockupEnvironment === 'light'
+        ? `ENVIRONMENT — BRIGHT STUDIO:
+— Background: pure white or warm off-white (#f8f8f6), seamless infinity curve, no visible horizon line.
+— Key light: large softbox or window light from upper-left, soft shadow falloff.
+— Fill: broad ambient fill from opposite side, ratio approximately 2:1 — near-shadowless, airy.
+— Surface: white or light grey matte — very soft diffused contact shadow beneath the object only.
+— Mood: clean product-catalog / e-commerce — think Apple, Muji, luxury skincare.`
+        : `ENVIRONMENT — NEUTRAL STUDIO:
+— Background: neutral mid-grey or warm cream, seamless.
+— Balanced 3-point lighting: key, fill, rim — professional product photography standard.
+— Choose lighting mood that best complements the design's color palette.`
+
+    const extraDesc = userDescription?.trim() ? `\nADDITIONAL INSTRUCTIONS: "${userDescription.trim()}"` : ''
+
+    return `HIGH-END STUDIO MOCKUP — professional product photography aesthetic.
 
 ${imageRefSection}
 
 ${mockupTarget}
+
 ${envNote}${extraDesc}
 
-DESIGN PRESERVATION RULES:
-— Reproduce the uploaded design with 100% accuracy: colors, typography, logo, proportions — exactly as in IMAGE 1.
-— Apply realistic perspective distortion and surface curvature to the design to match the mockup surface.
-— Lighting and shadows on the design must match the environment lighting (highlight/shadow wrap around the surface naturally).
-— Do NOT alter the design content, brand colors, or typography in any way.
+DESIGN PLACEMENT & PRESERVATION:
+— Reproduce the uploaded design with 100% fidelity: exact colors, typography, logo, proportions, layout.
+— Apply photorealistic perspective distortion and surface curvature matching the mockup geometry.
+— Wrap lighting and shadows over the design surface naturally — highlight on raised edges, shadow in recesses.
+— Do NOT alter, reinterpret, simplify, or stylize the design content in any way.
+— The design must be readable and sharp — not blurry, not oversaturated.
 
-OUTPUT: ONE single mockup image. No comparisons, no before/after, no grids.
+QUALITY STANDARD:
+— CGI / studio photography hybrid quality — indistinguishable from a professional product shoot.
+— Depth of field: sharp on the object, very slight background blur (f/5.6–f/8 equivalent).
+— No lens flare, no Instagram filters, no vignette, no watermarks.
+
+OUTPUT: ONE single mockup image. No comparisons, no before/after layouts, no grids.
 Start directly with the prompt — no preamble.`
   }
 

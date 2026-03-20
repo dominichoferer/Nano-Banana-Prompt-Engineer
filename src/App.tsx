@@ -1,10 +1,27 @@
 import { useState, useCallback, useRef } from 'react'
+import * as pdfjsLib from 'pdfjs-dist'
 import PromptDisplay from './components/PromptDisplay'
 import GeneratedImage from './components/GeneratedImage'
 import type { UploadedImage, AnalysisStatus, GenerationStatus, PromptMode, FocusArea, MockupType } from './types'
 import { CHANGE_AREAS, MOCKUP_TYPES } from './types'
 
+pdfjsLib.GlobalWorkerOptions.workerSrc = `https://unpkg.com/pdfjs-dist@${pdfjsLib.version}/build/pdf.worker.min.mjs`
+
 // ── Utilities ────────────────────────────────────────────────────────────────
+async function renderPdfFirstPageToFile(file: File): Promise<File> {
+  const arrayBuffer = await file.arrayBuffer()
+  const pdf = await pdfjsLib.getDocument({ data: arrayBuffer }).promise
+  const page = await pdf.getPage(1)
+  const viewport = page.getViewport({ scale: 2.0 })
+  const canvas = document.createElement('canvas')
+  canvas.width = viewport.width
+  canvas.height = viewport.height
+  await page.render({ canvasContext: canvas.getContext('2d')!, viewport, canvas }).promise
+  return new Promise((resolve) =>
+    canvas.toBlob((blob) => resolve(new File([blob!], file.name.replace(/\.pdf$/i, '.jpg'), { type: 'image/jpeg' })), 'image/jpeg', 0.9)
+  )
+}
+
 function compressImage(file: File): Promise<File> {
   return new Promise((resolve) => {
     const img = new Image()
@@ -299,7 +316,7 @@ function JobPanel({
     setGenerationStatus('generating'); setGenerationError(null); setGeneratedImage(null)
     try {
       const referenceImages = await Promise.all(
-        images.filter((img) => img.file.type !== 'application/pdf').map((img) => compressImage(img.file).then(
+        images.map((img) => (img.file.type === 'application/pdf' ? renderPdfFirstPageToFile(img.file) : compressImage(img.file)).then(
           (compressed) => new Promise<{ mimeType: string; data: string }>((resolve) => {
             const reader = new FileReader()
             reader.onload = () => {
