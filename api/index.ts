@@ -380,11 +380,12 @@ const GEN_QUALITY_HINT: Record<string, string> = {
 
 app.post('/api/generate', async (req: Request, res: Response) => {
   try {
-    const { prompt, aspectRatio, resolution, model } = req.body as {
+    const { prompt, aspectRatio, resolution, model, referenceImages } = req.body as {
       prompt: string
       aspectRatio?: string
       resolution?: string
       model?: 'flash' | 'pro'
+      referenceImages?: Array<{ mimeType: string; data: string }>
     }
     if (!prompt?.trim()) return res.status(400).json({ error: 'Prompt is required' })
     if (!process.env.GOOGLE_AI_API_KEY) return res.status(500).json({ error: 'GOOGLE_AI_API_KEY not configured' })
@@ -408,7 +409,10 @@ app.post('/api/generate', async (req: Request, res: Response) => {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({
-        contents: [{ parts: [{ text: enrichedPrompt }] }],
+        contents: [{ parts: [
+          ...(referenceImages ?? []).map((img) => ({ inlineData: { mimeType: img.mimeType, data: img.data } })),
+          { text: enrichedPrompt },
+        ] }],
         generationConfig: {
           responseModalities: ['IMAGE', 'TEXT'],
           ...(Object.keys(imageConfig).length > 0 ? { imageConfig } : {}),

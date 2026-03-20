@@ -29,11 +29,12 @@ const QUALITY_HINT: Record<string, string> = {
 
 export async function generateImage(req: Request, res: Response) {
   try {
-    const { prompt, aspectRatio, resolution, model } = req.body as {
+    const { prompt, aspectRatio, resolution, model, referenceImages } = req.body as {
       prompt: string
       aspectRatio?: string
       resolution?: string
       model?: 'flash' | 'pro'
+      referenceImages?: Array<{ mimeType: string; data: string }>
     }
 
     if (!prompt?.trim()) return res.status(400).json({ error: 'Prompt is required' })
@@ -56,8 +57,14 @@ export async function generateImage(req: Request, res: Response) {
     if (nativeRatio && aspectRatio) imageConfig.aspectRatio = aspectRatio
 
     const url = `https://generativelanguage.googleapis.com/v1beta/models/${modelId}:generateContent?key=${apiKey}`
+
+    // Reference images come first, then the text prompt — Gemini uses them as visual anchor
+    const refParts = (referenceImages ?? []).map((img) => ({
+      inlineData: { mimeType: img.mimeType, data: img.data },
+    }))
+
     const body = {
-      contents: [{ parts: [{ text: enrichedPrompt }] }],
+      contents: [{ parts: [...refParts, { text: enrichedPrompt }] }],
       generationConfig: {
         responseModalities: ['IMAGE', 'TEXT'],
         ...(Object.keys(imageConfig).length > 0 ? { imageConfig } : {}),

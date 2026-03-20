@@ -379,10 +379,31 @@ export default function App() {
     setGenerationError(null)
     setGeneratedImage(null)
     try {
+      // Convert uploaded reference images to base64 for Gemini visual anchor
+      const referenceImages = await Promise.all(
+        images.map((img) => compressImage(img.file).then(
+          (compressed) => new Promise<{ mimeType: string; data: string }>((resolve) => {
+            const reader = new FileReader()
+            reader.onload = () => {
+              const dataUrl = reader.result as string
+              const [header, data] = dataUrl.split(',')
+              const mimeType = header.match(/data:([^;]+)/)?.[1] ?? 'image/jpeg'
+              resolve({ mimeType, data })
+            }
+            reader.readAsDataURL(compressed)
+          }),
+        ))
+      )
+
       const res = await fetch('/api/generate', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ prompt: prompt.trim(), model: selectedModel, resolution: selectedResolution }),
+        body: JSON.stringify({
+          prompt: prompt.trim(),
+          model: selectedModel,
+          resolution: selectedResolution,
+          referenceImages: referenceImages.length > 0 ? referenceImages : undefined,
+        }),
       })
       if (!res.ok) {
         const err = await res.json().catch(() => ({ error: res.statusText }))
@@ -396,7 +417,7 @@ export default function App() {
       setGenerationError(err instanceof Error ? err.message : 'Generierung fehlgeschlagen')
       setGenerationStatus('error')
     }
-  }, [prompt, selectedModel, selectedResolution])
+  }, [prompt, selectedModel, selectedResolution, images])
 
   const handleQuickGenerate = useCallback(async () => {
     if (!quickPrompt.trim()) return
