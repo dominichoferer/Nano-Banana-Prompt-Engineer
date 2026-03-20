@@ -151,9 +151,12 @@ function buildUserMessage(
   userDescription?: string,
   promptMode?: string,
   changeAreas?: string[],
+  mockupType?: string,
+  mockupEnvironment?: string,
 ): string {
   const count = imageSettings.length
   const isGeneration = promptMode === 'generation'
+  const isMockup = promptMode === 'mockup'
   const hasChange = (changeAreas?.length ?? 0) > 0
   const imageIndexBlock = buildImageIndex(imageSettings)
   const perImageLocksBlock = buildPerImageLocks(imageSettings)
@@ -187,6 +190,43 @@ ${subject}
 Generate a highly detailed, structured prompt for AI image generation.
 Be specific about: subject, style, lighting, color palette, mood, composition, camera settings, post-processing.
 Start directly with the header line — no preamble.`
+  }
+
+  // ── MOCKUP MODE ────────────────────────────────────────────────────────────
+  if (isMockup) {
+    const typeLabels: Record<string, string> = {
+      folder: 'folder / document folder', flyer: 'DIN A5 flyer', billboard: 'outdoor billboard / large-format poster',
+      webseite: 'website / browser mockup', tshirt: 'T-shirt', tasse: 'coffee mug',
+      buch: 'hardcover book', visitenkarte: 'business card', flasche: 'bottle / packaging', verpackung: 'product packaging box',
+    }
+    const typeLabel = mockupType ? typeLabels[mockupType] ?? mockupType : null
+    const mockupTarget = typeLabel
+      ? `Place the uploaded artwork/design/logo into a photorealistic ${typeLabel} mockup.`
+      : userDescription?.trim()
+        ? `Create a mockup for: "${userDescription.trim()}"`
+        : `Create a photorealistic product mockup for the uploaded design.`
+    const envNote = mockupEnvironment === 'dark'
+      ? 'Environment: dark/moody studio — deep shadows, dark background, accent lighting.'
+      : mockupEnvironment === 'light'
+        ? 'Environment: bright/clean studio — white or light neutral background, soft even lighting.'
+        : 'Environment: clean neutral studio lighting, choose what suits the mockup best.'
+    const extraDesc = typeLabel && userDescription?.trim() ? `\nAdditional instructions: "${userDescription.trim()}"` : ''
+
+    return `MOCKUP GENERATION — place the uploaded design into a product mockup.
+
+${imageRefSection}
+
+${mockupTarget}
+${envNote}${extraDesc}
+
+DESIGN PRESERVATION RULES:
+— Reproduce the uploaded design with 100% accuracy: colors, typography, logo, proportions — exactly as in IMAGE 1.
+— Apply realistic perspective distortion and surface curvature to the design to match the mockup surface.
+— Lighting and shadows on the design must match the environment lighting (highlight/shadow wrap around the surface naturally).
+— Do NOT alter the design content, brand colors, or typography in any way.
+
+OUTPUT: ONE single mockup image. No comparisons, no before/after, no grids.
+Start directly with the prompt — no preamble.`
   }
 
   // ── RETOUCH MODE ───────────────────────────────────────────────────────────
@@ -259,6 +299,8 @@ export async function analyzeImages(req: Request, res: Response) {
     const promptMode = req.body?.promptMode as string | undefined
     const changeAreasRaw = req.body?.changeAreas as string | undefined
     const changeAreas = changeAreasRaw ? changeAreasRaw.split(',').filter(Boolean) : []
+    const mockupType = req.body?.mockupType as string | undefined
+    const mockupEnvironment = req.body?.mockupEnvironment as string | undefined
 
     // Parse per-image settings (new format)
     let imageSettings: ImageSetting[] = []
@@ -316,7 +358,7 @@ export async function analyzeImages(req: Request, res: Response) {
             ...imageContent,
             {
               type: 'text',
-              text: buildUserMessage(imageSettings, userDescription, promptMode, changeAreas),
+              text: buildUserMessage(imageSettings, userDescription, promptMode, changeAreas, mockupType, mockupEnvironment),
             },
           ],
         },

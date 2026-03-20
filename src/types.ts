@@ -14,7 +14,30 @@ export type AnalysisStatus = 'idle' | 'analyzing' | 'done' | 'error'
 
 export type GenerationStatus = 'idle' | 'generating' | 'done' | 'error'
 
-export type PromptMode = 'retouch' | 'generation'
+export type PromptMode = 'retouch' | 'mockup' | 'generation'
+
+export type MockupType =
+  | 'folder' | 'flyer' | 'billboard' | 'webseite' | 'tshirt'
+  | 'tasse' | 'buch' | 'visitenkarte' | 'flasche' | 'verpackung'
+
+export interface MockupTypeDef {
+  id: MockupType
+  icon: string
+  label: string
+}
+
+export const MOCKUP_TYPES: MockupTypeDef[] = [
+  { id: 'folder',      icon: '📁', label: 'Mappe' },
+  { id: 'flyer',       icon: '📄', label: 'Flyer' },
+  { id: 'billboard',   icon: '🗣️', label: 'Billboard' },
+  { id: 'webseite',    icon: '🖥️', label: 'Webseite' },
+  { id: 'tshirt',      icon: '👕', label: 'T-Shirt' },
+  { id: 'tasse',       icon: '☕', label: 'Tasse' },
+  { id: 'buch',        icon: '📚', label: 'Buch' },
+  { id: 'visitenkarte',icon: '💳', label: 'Visitenkarte' },
+  { id: 'flasche',     icon: '🧴', label: 'Flasche' },
+  { id: 'verpackung',  icon: '📦', label: 'Verpackung' },
+]
 
 export type FocusArea =
   | 'pose' | 'lighting' | 'color' | 'background' // change group

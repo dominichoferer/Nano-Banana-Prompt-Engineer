@@ -1,8 +1,8 @@
 import { useState, useCallback, useRef } from 'react'
 import PromptDisplay from './components/PromptDisplay'
 import GeneratedImage from './components/GeneratedImage'
-import type { UploadedImage, AnalysisStatus, GenerationStatus, PromptMode, FocusArea } from './types'
-import { CHANGE_AREAS } from './types'
+import type { UploadedImage, AnalysisStatus, GenerationStatus, PromptMode, FocusArea, MockupType } from './types'
+import { CHANGE_AREAS, MOCKUP_TYPES } from './types'
 
 // ── Utilities ────────────────────────────────────────────────────────────────
 function compressImage(file: File): Promise<File> {
@@ -206,6 +206,8 @@ function JobPanel({
   const [userDescription, setUserDescription] = useState('')
   const [promptMode, setPromptMode] = useState<PromptMode>('retouch')
   const [changeAreas, setChangeAreas] = useState<FocusArea[]>([])
+  const [mockupType, setMockupType] = useState<MockupType | ''>('')
+  const [mockupEnvironment, setMockupEnvironment] = useState<'light' | 'dark' | ''>('')
   const [prompt, setPrompt] = useState('')
   const [analysisStatus, setAnalysisStatus] = useState<AnalysisStatus>('idle')
   const [analysisError, setAnalysisError] = useState<string | null>(null)
@@ -251,6 +253,8 @@ function JobPanel({
       if (userDescription.trim()) formData.append('userDescription', userDescription.trim())
       formData.append('promptMode', promptMode)
       if (changeAreas.length > 0) formData.append('changeAreas', changeAreas.join(','))
+      if (promptMode === 'mockup' && mockupType) formData.append('mockupType', mockupType)
+      if (promptMode === 'mockup' && mockupEnvironment) formData.append('mockupEnvironment', mockupEnvironment)
 
       const response = await fetch('/api/analyze', { method: 'POST', body: formData })
       if (!response.ok) {
@@ -279,7 +283,7 @@ function JobPanel({
       setAnalysisError(err instanceof Error ? err.message : 'Analyse fehlgeschlagen')
       setAnalysisStatus('error')
     }
-  }, [images, userDescription, promptMode, changeAreas])
+  }, [images, userDescription, promptMode, changeAreas, mockupType, mockupEnvironment])
 
   const handleGenerate = useCallback(async () => {
     if (!prompt.trim()) return
@@ -364,6 +368,12 @@ function JobPanel({
               </svg>
               Foto-Retusche
             </button>
+            <button onClick={() => setPromptMode('mockup')} className={`mode-btn ${promptMode === 'mockup' ? 'mode-btn-active' : 'mode-btn-inactive'}`}>
+              <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9.75 17L9 20l-1 1h8l-1-1-.75-3M3 13h18M5 17h14a2 2 0 002-2V5a2 2 0 00-2-2H5a2 2 0 00-2 2v10a2 2 0 002 2z" />
+              </svg>
+              Mockup
+            </button>
             <button onClick={() => setPromptMode('generation')} className={`mode-btn ${promptMode === 'generation' ? 'mode-btn-active' : 'mode-btn-inactive'}`}>
               <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                 <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 3v4M3 5h4M6 17v4m-2-2h4m5-16l2.286 6.857L21 12l-5.714 2.143L13 21l-2.286-6.857L5 12l5.714-2.143L13 3z" />
@@ -373,8 +383,41 @@ function JobPanel({
           </div>
         </div>
 
-        {/* Change areas */}
-        <div className="flex flex-col gap-2">
+        {/* Mockup options — only in mockup mode */}
+        {promptMode === 'mockup' && (
+          <div className="flex flex-col gap-3">
+            <div className="flex flex-col gap-2">
+              <div className="flex items-center justify-between">
+                <span className="label-section">Mockup-Art</span>
+                {mockupType && <button onClick={() => setMockupType('')} className="text-ink-400 hover:text-ink-700 text-xs font-sans transition-colors">leeren</button>}
+              </div>
+              <div className="flex flex-wrap gap-1.5">
+                {MOCKUP_TYPES.map((t) => (
+                  <button key={t.id} onClick={() => setMockupType(mockupType === t.id ? '' : t.id)}
+                    disabled={analysisStatus === 'analyzing'}
+                    className={`chip-change ${mockupType === t.id ? 'chip-change-active' : ''}`}>
+                    {t.icon} {t.label}
+                  </button>
+                ))}
+              </div>
+            </div>
+            <div className="flex flex-col gap-2">
+              <span className="label-section">Umfeld-Farbgebung</span>
+              <div className="flex gap-2">
+                {([['light', '☀️', 'Hell'], ['dark', '🌙', 'Dunkel']] as const).map(([val, icon, label]) => (
+                  <button key={val} onClick={() => setMockupEnvironment(mockupEnvironment === val ? '' : val)}
+                    disabled={analysisStatus === 'analyzing'}
+                    className={`chip-change ${mockupEnvironment === val ? 'chip-change-active' : ''}`}>
+                    {icon} {label}
+                  </button>
+                ))}
+              </div>
+            </div>
+          </div>
+        )}
+
+        {/* Change areas — only for retouch mode */}
+        {promptMode === 'retouch' && <div className="flex flex-col gap-2">
           <div className="flex items-center justify-between">
             <span className="label-section flex items-center gap-1.5">
               <svg className="w-3 h-3 text-banana-500" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -395,16 +438,18 @@ function JobPanel({
               </button>
             ))}
           </div>
-        </div>
+        </div>}
 
         {/* Description */}
         <div className="flex flex-col gap-2">
           <span className="label-section">Was möchtest du machen?</span>
           <textarea value={userDescription} onChange={(e) => setUserDescription(e.target.value)}
             disabled={analysisStatus === 'analyzing'}
-            placeholder={promptMode === 'retouch'
-              ? 'z.B. Person aus Bild 1 behalten, aber Hintergrund von Bild 2 verwenden. Beleuchtung verbessern.'
-              : 'z.B. Ein Luxus-Hautpflegeprodukt auf Marmor, dramatisches Seitenlicht, tiefe Schatten, Editorial-Stil…'}
+            placeholder={
+              promptMode === 'retouch' ? 'z.B. Person aus Bild 1 behalten, aber Hintergrund von Bild 2 verwenden. Beleuchtung verbessern.' :
+              promptMode === 'mockup'   ? 'z.B. Logo auf weißem Grund, corporate blau als Akzentfarbe…' :
+              'z.B. Ein Luxus-Hautpflegeprodukt auf Marmor, dramatisches Seitenlicht, tiefe Schatten, Editorial-Stil…'
+            }
             rows={4} className="input-field resize-none text-sm leading-relaxed" />
         </div>
 
