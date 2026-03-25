@@ -182,7 +182,7 @@ function UploadZone({
                 {dragging ? 'Jetzt loslassen' : 'Referenzbild hier ablegen'}
               </p>
               <p className="text-ink-400 text-sm mt-1 font-sans">
-                oder <span className="text-banana-600 font-medium underline underline-offset-2">durchsuchen</span> · JPEG, PNG, WebP, PDF · max 20 MB
+                oder <span className="text-banana-600 font-medium underline underline-offset-2">durchsuchen</span> · JPEG, PNG, WebP, PDF · max 50 MB
               </p>
             </div>
           </>
@@ -246,7 +246,12 @@ function JobPanel({
   const [selectedAspectRatio, setSelectedAspectRatio] = useState('1:1')
 
   const addImages = useCallback((files: FileList | File[]) => {
-    const accepted = Array.from(files).filter((f) => f.type.startsWith('image/') || f.type === 'application/pdf')
+    const IMAGE_EXTS = new Set(['jpg', 'jpeg', 'png', 'webp', 'gif', 'pdf'])
+    const accepted = Array.from(files).filter((f) => {
+      if (f.type.startsWith('image/') || f.type === 'application/pdf') return true
+      const ext = f.name.split('.').pop()?.toLowerCase() ?? ''
+      return IMAGE_EXTS.has(ext)
+    })
     setImages((prev) => [...prev, ...accepted.map(createUploadedImage)])
   }, [])
 
@@ -269,7 +274,8 @@ function JobPanel({
     if (images.length === 0 && promptMode !== 'generation') return
     setAnalysisStatus('analyzing'); setAnalysisError(null); setPrompt('')
     try {
-      const compressed = await Promise.all(images.map((img) => compressImage(img.file)))
+      const compressed = await Promise.all(images.map((img) =>
+        img.file.type === 'application/pdf' ? Promise.resolve(img.file) : compressImage(img.file)))
       const formData = new FormData()
       compressed.forEach((f) => formData.append('images', f))
       const imageSettings = images.map((img) => ({

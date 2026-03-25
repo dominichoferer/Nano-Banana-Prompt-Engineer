@@ -11,13 +11,16 @@ const __dirname = path.dirname(fileURLToPath(import.meta.url))
 
 const app = express()
 
-// Multer: memory storage, max 10 images, 20MB each
+// Multer: memory storage, max 10 files, 50MB each
 const upload = multer({
   storage: multer.memoryStorage(),
-  limits: { fileSize: 20 * 1024 * 1024, files: 10 },
+  limits: { fileSize: 50 * 1024 * 1024, files: 10 },
   fileFilter: (_req, file, cb) => {
     const allowed = ['image/jpeg', 'image/png', 'image/webp', 'image/gif', 'application/pdf']
-    if (allowed.includes(file.mimetype)) {
+    // Also allow by extension when MIME type is missing (e.g. drag-and-drop on macOS)
+    const ext = (file.originalname.split('.').pop() ?? '').toLowerCase()
+    const allowedExts = ['jpg', 'jpeg', 'png', 'webp', 'gif', 'pdf']
+    if (allowed.includes(file.mimetype) || allowedExts.includes(ext)) {
       cb(null, true)
     } else {
       cb(new Error(`Unsupported file type: ${file.mimetype}`))
@@ -26,7 +29,7 @@ const upload = multer({
 })
 
 app.use(cors())
-app.use(express.json({ limit: '50mb' }))
+app.use(express.json({ limit: '100mb' }))
 
 // API Routes
 app.post('/api/analyze', upload.array('images', 10), analyzeImages)

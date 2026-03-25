@@ -8,15 +8,17 @@ const app = express()
 
 const upload = multer({
   storage: multer.memoryStorage(),
-  limits: { fileSize: 20 * 1024 * 1024, files: 10 },
+  limits: { fileSize: 50 * 1024 * 1024, files: 10 },
   fileFilter: (_req, file, cb) => {
     const allowed = ['image/jpeg', 'image/png', 'image/webp', 'image/gif', 'application/pdf']
-    cb(null, allowed.includes(file.mimetype))
+    const ext = (file.originalname.split('.').pop() ?? '').toLowerCase()
+    const allowedExts = ['jpg', 'jpeg', 'png', 'webp', 'gif', 'pdf']
+    cb(null, allowed.includes(file.mimetype) || allowedExts.includes(ext))
   },
 })
 
 app.use(cors())
-app.use(express.json({ limit: '50mb' }))
+app.use(express.json({ limit: '100mb' }))
 
 // ── System Prompt ───────────────────────────────────────────────────────────
 
