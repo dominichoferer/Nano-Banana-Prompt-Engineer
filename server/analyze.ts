@@ -380,38 +380,60 @@ export async function analyzeImages(req: Request, res: Response) {
       }
     })
 
-    res.setHeader('Content-Type', 'text/event-stream')
-    res.setHeader('Cache-Control', 'no-cache')
-    res.setHeader('Connection', 'keep-alive')
-    res.flushHeaders()
-
-    const stream = client.messages.stream({
-      model: 'claude-opus-4-6',
+    const messageParams = {
       max_tokens: 4096,
       system: SYSTEM_PROMPT,
       messages: [
         {
-          role: 'user',
+          role: 'user' as const,
           content: [
             ...imageContent,
             {
-              type: 'text',
+              type: 'text' as const,
               text: buildUserMessage(imageSettings, userDescription, promptMode, changeAreas, mockupType, mockupEnvironment),
             },
           ],
         },
       ],
-    })
+    }
 
-    for await (const event of stream) {
-      if (event.type === 'content_block_delta' && event.delta.type === 'text_delta') {
-        res.write(`data: ${JSON.stringify({ type: 'text', text: event.delta.text })}\n\n`)
+    const MODELS = ['claude-opus-4-6', 'claude-sonnet-4-6']
+    let lastErr: unknown
+
+    for (const model of MODELS) {
+      try {
+        const stream = client.messages.stream({ ...messageParams, model })
+
+        // Only send headers once we have a live stream
+        if (!res.headersSent) {
+          res.setHeader('Content-Type', 'text/event-stream')
+          res.setHeader('Cache-Control', 'no-cache')
+          res.setHeader('Connection', 'keep-alive')
+          res.flushHeaders()
+        }
+
+        for await (const event of stream) {
+          if (event.type === 'content_block_delta' && event.delta.type === 'text_delta') {
+            res.write(`data: ${JSON.stringify({ type: 'text', text: event.delta.text })}\n\n`)
+          }
+        }
+
+        const finalMessage = await stream.finalMessage()
+        res.write(`data: ${JSON.stringify({ type: 'done', usage: finalMessage.usage })}\n\n`)
+        res.end()
+        return
+      } catch (err) {
+        const status = (err as { status?: number })?.status
+        if (status === 529 && model !== MODELS[MODELS.length - 1]) {
+          console.warn(`${model} overloaded (529), retrying with ${MODELS[MODELS.indexOf(model) + 1]}…`)
+          lastErr = err
+          continue
+        }
+        throw err
       }
     }
 
-    const finalMessage = await stream.finalMessage()
-    res.write(`data: ${JSON.stringify({ type: 'done', usage: finalMessage.usage })}\n\n`)
-    res.end()
+    throw lastErr
   } catch (err) {
     const message = err instanceof Error ? err.message : 'Unknown error'
     console.error('Analysis error:', message)
