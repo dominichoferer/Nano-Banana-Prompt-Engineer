@@ -397,10 +397,10 @@ export async function analyzeImages(req: Request, res: Response) {
       ],
     }
 
-    // Generation mode (no images) → start with Sonnet to avoid Opus overload
-    const MODELS = promptMode === 'generation' && imageContent.length === 0
-      ? ['claude-sonnet-4-6']
-      : ['claude-opus-4-6', 'claude-sonnet-4-6']
+    // Sonnet-first to avoid frequent Opus overload; Opus as fallback for image-heavy tasks
+    const MODELS = imageContent.length > 0
+      ? ['claude-sonnet-4-6', 'claude-opus-4-6']
+      : ['claude-sonnet-4-6']
     let lastErr: unknown
 
     for (const model of MODELS) {

@@ -514,7 +514,7 @@ function JobPanel({
 
         <div className="bg-banana-50 border border-banana-200 rounded-xl px-4 py-3">
           <p className="text-ink-500 text-xs font-sans leading-relaxed">
-            <span className="text-banana-700 font-semibold">Claude Opus</span> analysiert deine Referenzbilder mit den gesetzten Lock-Regeln und erstellt einen strukturierten, detaillierten Prompt.
+            <span className="text-banana-700 font-semibold">Claude Sonnet</span> analysiert deine Referenzbilder mit den gesetzten Lock-Regeln und erstellt einen strukturierten, detaillierten Prompt.
           </p>
         </div>
       </div>
@@ -797,7 +797,7 @@ export default function App() {
       <footer className="border-t border-cream-200 bg-white mt-auto">
         <div className="max-w-4xl mx-auto px-5 py-4 flex items-center justify-between">
           <p className="text-ink-300 text-xs font-sans">🍌 Nano Banana AI Studio</p>
-          <p className="text-ink-300 text-xs font-sans">Claude Opus Vision · Gemini Flash & Pro</p>
+          <p className="text-ink-300 text-xs font-sans">Claude Sonnet Vision · Gemini Flash & Pro</p>
         </div>
       </footer>
     </div>
