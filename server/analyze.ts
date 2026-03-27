@@ -397,10 +397,7 @@ export async function analyzeImages(req: Request, res: Response) {
       ],
     }
 
-    // Sonnet-first to avoid frequent Opus overload; Opus as fallback for image-heavy tasks
-    const MODELS = imageContent.length > 0
-      ? ['claude-sonnet-4-6', 'claude-opus-4-6']
-      : ['claude-sonnet-4-6']
+    const MODELS = ['claude-sonnet-4-6', 'claude-haiku-4-5-20251001', 'claude-opus-4-6']
     let lastErr: unknown
 
     for (const model of MODELS) {
@@ -433,8 +430,9 @@ export async function analyzeImages(req: Request, res: Response) {
         const hasNextModel = model !== MODELS[MODELS.length - 1]
         if (isOverloaded && hasNextModel) {
           const next = MODELS[MODELS.indexOf(model) + 1]
-          console.warn(`[analyze] ${model} overloaded, retrying with ${next}…`)
+          console.warn(`[analyze] ${model} overloaded (529), retrying with ${next}…`)
           lastErr = err
+          await new Promise((r) => setTimeout(r, 1000))
           continue
         }
         throw err
