@@ -397,7 +397,10 @@ export async function analyzeImages(req: Request, res: Response) {
       ],
     }
 
-    const MODELS = ['claude-opus-4-6', 'claude-sonnet-4-6']
+    // Generation mode (no images) → start with Sonnet to avoid Opus overload
+    const MODELS = promptMode === 'generation' && imageContent.length === 0
+      ? ['claude-sonnet-4-6']
+      : ['claude-opus-4-6', 'claude-sonnet-4-6']
     let lastErr: unknown
 
     for (const model of MODELS) {
@@ -423,9 +426,14 @@ export async function analyzeImages(req: Request, res: Response) {
         res.end()
         return
       } catch (err) {
-        const status = (err as { status?: number })?.status
-        if (status === 529 && model !== MODELS[MODELS.length - 1]) {
-          console.warn(`${model} overloaded (529), retrying with ${MODELS[MODELS.indexOf(model) + 1]}…`)
+        const anyErr = err as { status?: number; message?: string }
+        const isOverloaded =
+          anyErr?.status === 529 ||
+          (typeof anyErr?.message === 'string' && anyErr.message.includes('overloaded'))
+        const hasNextModel = model !== MODELS[MODELS.length - 1]
+        if (isOverloaded && hasNextModel) {
+          const next = MODELS[MODELS.indexOf(model) + 1]
+          console.warn(`[analyze] ${model} overloaded, retrying with ${next}…`)
           lastErr = err
           continue
         }
