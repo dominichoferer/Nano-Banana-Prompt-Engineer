@@ -45,6 +45,34 @@ Preserve EXACTLY from the reference: the subject's appearance, clothing, colors,
 OUTPUT: ONE single image only. No comparisons, no before/after, no grid.`
 }
 
+// Compress a dataUrl to stay under maxBytes (base64 size), reducing quality iteratively
+function compressToLimit(dataUrl: string, maxBytes = 3_500_000): Promise<string> {
+  return new Promise((resolve) => {
+    const img = new Image()
+    img.onload = () => {
+      const MAX_DIM = 1600
+      const scale = Math.min(1, MAX_DIM / Math.max(img.width, img.height))
+      const w = Math.round(img.width * scale)
+      const h = Math.round(img.height * scale)
+      const canvas = document.createElement('canvas')
+      canvas.width = w; canvas.height = h
+      canvas.getContext('2d')!.drawImage(img, 0, 0, w, h)
+      const tryQuality = (q: number) => {
+        const result = canvas.toDataURL('image/jpeg', q)
+        // base64 payload size ~ (result.length - header) * 0.75
+        if (result.length * 0.75 <= maxBytes || q <= 0.3) {
+          resolve(result)
+        } else {
+          tryQuality(Math.round((q - 0.1) * 10) / 10)
+        }
+      }
+      tryQuality(0.85)
+    }
+    img.onerror = () => resolve(dataUrl)
+    img.src = dataUrl
+  })
+}
+
 function ShootingPanel({ imageDataUrl, model, aspectRatio }: {
   imageDataUrl: string
   basePrompt: string
@@ -75,7 +103,8 @@ function ShootingPanel({ imageDataUrl, model, aspectRatio }: {
   const handleShoot = async () => {
     if (!canRun) return
 
-    const [header, imgData] = imageDataUrl.split(',')
+    const compressed = await compressToLimit(imageDataUrl)
+    const [header, imgData] = compressed.split(',')
     const mimeType = header.match(/data:([^;]+)/)?.[1] ?? 'image/jpeg'
     const referenceImages = [{ mimeType, data: imgData }]
 
