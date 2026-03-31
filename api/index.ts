@@ -415,9 +415,12 @@ app.post('/api/generate', async (req: Request, res: Response) => {
     if (nativeRatio && aspectRatio) imageConfig.aspectRatio = aspectRatio
 
     const url = `https://generativelanguage.googleapis.com/v1beta/models/${modelId}:generateContent?key=${apiKey}`
+    const abortController = new AbortController()
+    const abortTimeout = setTimeout(() => abortController.abort(), 270_000)
     const fetchRes = await fetch(url, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
+      signal: abortController.signal,
       body: JSON.stringify({
         contents: [{ parts: [
           ...(referenceImages ?? []).map((img) => ({ inlineData: { mimeType: img.mimeType, data: img.data } })),
@@ -429,6 +432,7 @@ app.post('/api/generate', async (req: Request, res: Response) => {
         },
       }),
     })
+    clearTimeout(abortTimeout)
     const data = await fetchRes.json() as GeminiResponse
     if (!fetchRes.ok) throw new Error(data.error?.message || `Gemini error ${fetchRes.status}`)
 

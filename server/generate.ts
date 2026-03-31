@@ -73,11 +73,15 @@ export async function generateImage(req: Request, res: Response) {
 
     console.log(`[generate] model=${modelId} resolution=${resolution} ratio=${aspectRatio}`)
 
+    const abortController = new AbortController()
+    const abortTimeout = setTimeout(() => abortController.abort(), 270_000)
     const fetchRes = await fetch(url, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
+      signal: abortController.signal,
       body: JSON.stringify(body),
     })
+    clearTimeout(abortTimeout)
 
     const data = await fetchRes.json() as GeminiResponse
     if (!fetchRes.ok) throw new Error(data.error?.message || `Gemini API error ${fetchRes.status}`)
