@@ -25,14 +25,15 @@ const SCENARIOS = [
   { id: 'editorial',       label: '✏️ Editorial',         prompt: 'editorial photography style, fashion magazine aesthetic' },
 ]
 
+const ASPECT_RATIOS = ['1:1', '16:9', '9:16', '4:3', '3:4', '4:5', '5:4']
+
 interface ShootingResult {
   id: number
   status: 'generating' | 'done' | 'error'
   imageUrl?: string
+  errorMsg?: string
   label: string
 }
-
-const ASPECT_RATIOS = ['1:1', '16:9', '9:16', '4:3', '3:4', '4:5', '5:4']
 
 function buildShootingPrompt(scenarioPrompt: string, customText: string): string {
   const change = [scenarioPrompt, customText.trim()].filter(Boolean).join('. ')
@@ -53,15 +54,22 @@ function ShootingPanel({ imageDataUrl, model, aspectRatio }: {
   const [open, setOpen] = useState(false)
   const [selected, setSelected] = useState<Set<string>>(new Set())
   const [customText, setCustomText] = useState('')
+  const [customAsExtra, setCustomAsExtra] = useState(false)
   const [variantCount, setVariantCount] = useState<1 | 2 | 3>(2)
   const [shootRatio, setShootRatio] = useState(aspectRatio ?? '1:1')
+  const [shootModel, setShootModel] = useState<'flash' | 'pro'>(model ?? 'flash')
   const [results, setResults] = useState<ShootingResult[]>([])
   const [running, setRunning] = useState(false)
 
   const toggle = (id: string) =>
     setSelected(prev => { const n = new Set(prev); n.has(id) ? n.delete(id) : n.add(id); return n })
 
-  const totalImages = selected.size > 0 ? selected.size : (customText.trim() ? variantCount : 0)
+  const hasCustom = customText.trim().length > 0
+  const scenariosActive = selected.size > 0
+
+  const totalImages = scenariosActive
+    ? selected.size + (hasCustom && customAsExtra ? 1 : 0)
+    : (hasCustom ? variantCount : 0)
   const canRun = totalImages > 0 && !running
 
   const handleShoot = async () => {
@@ -71,15 +79,20 @@ function ShootingPanel({ imageDataUrl, model, aspectRatio }: {
     const mimeType = header.match(/data:([^;]+)/)?.[1] ?? 'image/jpeg'
     const referenceImages = [{ mimeType, data: imgData }]
 
-    const jobs: Array<{ label: string; promptText: string }> = selected.size > 0
-      ? SCENARIOS.filter(s => selected.has(s.id)).map(s => ({
-          label: s.label,
-          promptText: buildShootingPrompt(s.prompt, customText),
-        }))
-      : Array.from({ length: variantCount }, (_, i) => ({
-          label: `Variation ${i + 1}`,
-          promptText: buildShootingPrompt('', customText),
-        }))
+    const jobs: Array<{ label: string; promptText: string }> = []
+
+    if (scenariosActive) {
+      SCENARIOS.filter(s => selected.has(s.id)).forEach(s => {
+        jobs.push({ label: s.label, promptText: buildShootingPrompt(s.prompt, '') })
+      })
+      if (hasCustom && customAsExtra) {
+        jobs.push({ label: '✏️ Eigene', promptText: buildShootingPrompt('', customText) })
+      }
+    } else {
+      Array.from({ length: variantCount }, (_, i) =>
+        jobs.push({ label: `Variation ${i + 1}`, promptText: buildShootingPrompt('', customText) })
+      )
+    }
 
     setResults(jobs.map((j, i) => ({ id: i, status: 'generating', label: j.label })))
     setRunning(true)
@@ -91,7 +104,7 @@ function ShootingPanel({ imageDataUrl, model, aspectRatio }: {
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({
             prompt: job.promptText,
-            model: model ?? 'flash',
+            model: shootModel,
             resolution: '2K',
             aspectRatio: shootRatio,
             referenceImages,
@@ -103,8 +116,9 @@ function ShootingPanel({ imageDataUrl, model, aspectRatio }: {
         }
         const data = await res.json()
         setResults(prev => prev.map(r => r.id === i ? { ...r, status: 'done', imageUrl: data.image } : r))
-      } catch {
-        setResults(prev => prev.map(r => r.id === i ? { ...r, status: 'error' } : r))
+      } catch (err) {
+        const msg = err instanceof Error ? err.message : 'Unbekannter Fehler'
+        setResults(prev => prev.map(r => r.id === i ? { ...r, status: 'error', errorMsg: msg } : r))
       }
     }))
 
@@ -149,13 +163,8 @@ function ShootingPanel({ imageDataUrl, model, aspectRatio }: {
             <span className="label-section">Kamera & Stil</span>
             <div className="flex flex-wrap gap-1.5">
               {SCENARIOS.map(s => (
-                <button
-                  key={s.id}
-                  type="button"
-                  onClick={() => toggle(s.id)}
-                  disabled={running}
-                  className={selected.has(s.id) ? 'chip-change-active' : 'chip-change'}
-                >
+                <button key={s.id} type="button" onClick={() => toggle(s.id)} disabled={running}
+                  className={selected.has(s.id) ? 'chip-change-active' : 'chip-change'}>
                   {s.label}
                 </button>
               ))}
@@ -164,15 +173,50 @@ function ShootingPanel({ imageDataUrl, model, aspectRatio }: {
 
           {/* Custom text */}
           <div className="flex flex-col gap-2">
-            <span className="label-section">Eigene Beschreibung <span className="normal-case font-normal text-ink-300">(optional)</span></span>
+            <span className="label-section">
+              Eigene Beschreibung <span className="normal-case font-normal text-ink-300">(optional)</span>
+            </span>
             <textarea
               value={customText}
-              onChange={e => setCustomText(e.target.value)}
+              onChange={e => { setCustomText(e.target.value); if (!e.target.value.trim()) setCustomAsExtra(false) }}
               disabled={running}
               placeholder="z.B. Person schaut zur Seite, warmes Abendlicht, lockere Pose, grauer Studio-Hintergrund…"
               rows={3}
               className="input-field resize-none text-sm leading-relaxed"
             />
+            {/* Show "add as extra job" toggle only when scenarios are also selected */}
+            {scenariosActive && hasCustom && (
+              <button
+                type="button"
+                onClick={() => setCustomAsExtra(v => !v)}
+                disabled={running}
+                className={`self-start flex items-center gap-1.5 text-xs font-sans font-medium px-3 py-1.5 rounded-lg border transition-all duration-150 ${
+                  customAsExtra
+                    ? 'bg-banana-100 border-banana-400 text-banana-800'
+                    : 'bg-white border-cream-200 text-ink-400 hover:border-banana-300 hover:text-banana-700'
+                }`}
+              >
+                <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2.5} d="M12 4v16m8-8H4" />
+                </svg>
+                Zusätzlich als eigenes Bild generieren
+              </button>
+            )}
+          </div>
+
+          {/* Model selector */}
+          <div className="flex flex-col gap-2">
+            <span className="label-section">Modell</span>
+            <div className="bg-cream-100 rounded-xl p-1 flex gap-1">
+              <button type="button" onClick={() => setShootModel('flash')} disabled={running}
+                className={`mode-btn text-xs py-2 ${shootModel === 'flash' ? 'mode-btn-active' : 'mode-btn-inactive'}`}>
+                ⚡ Flash <span className="text-[10px] opacity-60 ml-0.5">schnell</span>
+              </button>
+              <button type="button" onClick={() => setShootModel('pro')} disabled={running}
+                className={`mode-btn text-xs py-2 ${shootModel === 'pro' ? 'mode-btn-active' : 'mode-btn-inactive'}`}>
+                ✦ Pro <span className="text-[10px] opacity-60 ml-0.5">best</span>
+              </button>
+            </div>
           </div>
 
           {/* Aspect ratio */}
@@ -180,13 +224,10 @@ function ShootingPanel({ imageDataUrl, model, aspectRatio }: {
             <span className="label-section">Format</span>
             <div className="flex flex-wrap gap-1.5">
               {ASPECT_RATIOS.map(r => (
-                <button
-                  key={r}
-                  type="button"
-                  onClick={() => setShootRatio(r)}
-                  disabled={running}
-                  className={`px-3 py-1.5 rounded-lg text-xs font-sans font-medium transition-all ${shootRatio === r ? 'bg-banana-500 text-white shadow-sm' : 'bg-cream-100 text-ink-500 hover:bg-cream-200'}`}
-                >
+                <button key={r} type="button" onClick={() => setShootRatio(r)} disabled={running}
+                  className={`px-3 py-1.5 rounded-lg text-xs font-sans font-medium transition-all ${
+                    shootRatio === r ? 'bg-banana-500 text-white shadow-sm' : 'bg-cream-100 text-ink-500 hover:bg-cream-200'
+                  }`}>
                   {r}
                 </button>
               ))}
@@ -194,18 +235,13 @@ function ShootingPanel({ imageDataUrl, model, aspectRatio }: {
           </div>
 
           {/* Variant count — only when no scenarios selected */}
-          {selected.size === 0 && (
+          {!scenariosActive && (
             <div className="flex items-center justify-between">
               <span className="label-section">Anzahl Variationen</span>
               <div className="bg-cream-100 rounded-xl p-1 flex gap-1">
                 {([1, 2, 3] as const).map(n => (
-                  <button
-                    key={n}
-                    type="button"
-                    onClick={() => setVariantCount(n)}
-                    disabled={running}
-                    className={`mode-btn text-xs py-2 px-4 ${variantCount === n ? 'mode-btn-active' : 'mode-btn-inactive'}`}
-                  >
+                  <button key={n} type="button" onClick={() => setVariantCount(n)} disabled={running}
+                    className={`mode-btn text-xs py-2 px-4 ${variantCount === n ? 'mode-btn-active' : 'mode-btn-inactive'}`}>
                     {n}×
                   </button>
                 ))}
@@ -216,18 +252,14 @@ function ShootingPanel({ imageDataUrl, model, aspectRatio }: {
           {/* Info line */}
           {totalImages > 0 && (
             <p className="text-xs font-sans text-banana-700 bg-banana-100 rounded-lg px-3 py-2">
-              {selected.size > 0
-                ? `${selected.size} Szenario${selected.size > 1 ? 's' : ''} → ${selected.size} Bild${selected.size > 1 ? 'er' : ''} werden parallel generiert`
+              {scenariosActive
+                ? `${selected.size} Szenario${selected.size > 1 ? 's' : ''}${customAsExtra ? ' + eigene Beschreibung' : ''} → ${totalImages} Bild${totalImages > 1 ? 'er' : ''} parallel`
                 : `${variantCount} Variation${variantCount > 1 ? 'en' : ''} werden parallel generiert`}
             </p>
           )}
 
           {/* CTA */}
-          <button
-            onClick={handleShoot}
-            disabled={!canRun}
-            className="btn-primary w-full py-3.5 text-sm"
-          >
+          <button onClick={handleShoot} disabled={!canRun} className="btn-primary w-full py-3.5 text-sm">
             {running ? (
               <>
                 <svg className="w-4 h-4 animate-spin" fill="none" viewBox="0 0 24 24">
@@ -281,8 +313,11 @@ function ShootingPanel({ imageDataUrl, model, aspectRatio }: {
                     </>
                   )}
                   {r.status === 'error' && (
-                    <div className="absolute inset-0 flex items-center justify-center">
-                      <span className="text-red-400 text-xs font-sans">Fehler</span>
+                    <div className="absolute inset-0 flex flex-col items-center justify-center gap-1 p-3">
+                      <span className="text-red-400 text-xs font-sans font-medium">Fehler</span>
+                      {r.errorMsg && (
+                        <span className="text-red-300 text-[9px] font-sans text-center leading-tight line-clamp-3">{r.errorMsg}</span>
+                      )}
                     </div>
                   )}
                 </div>
@@ -313,13 +348,7 @@ export default function GeneratedImage({ imageDataUrl, status, error, prompt, ac
   return (
     <div className="flex flex-col gap-3 h-full">
       {/* Image Container */}
-      <div
-        className={`
-          relative flex-1 min-h-[280px] rounded-2xl overflow-hidden
-          bg-cream-50 border border-cream-200 shadow-card
-          flex items-center justify-center
-        `}
-      >
+      <div className="relative flex-1 min-h-[280px] rounded-2xl overflow-hidden bg-cream-50 border border-cream-200 shadow-card flex items-center justify-center">
         {status === 'idle' && !imageDataUrl && (
           <div className="flex flex-col items-center gap-3 p-8 text-center">
             <div className="w-16 h-16 rounded-2xl bg-cream-100 border border-cream-200 flex items-center justify-center">
@@ -330,9 +359,7 @@ export default function GeneratedImage({ imageDataUrl, status, error, prompt, ac
             </div>
             <div>
               <p className="text-ink-500 text-sm font-medium">Noch kein Bild</p>
-              <p className="text-ink-300 text-xs mt-1">
-                Erst Prompt generieren, dann<br />„Bild generieren" klicken
-              </p>
+              <p className="text-ink-300 text-xs mt-1">Erst Prompt generieren, dann<br />„Bild generieren" klicken</p>
             </div>
           </div>
         )}
@@ -351,11 +378,8 @@ export default function GeneratedImage({ imageDataUrl, status, error, prompt, ac
             </div>
             <div className="flex gap-1.5">
               {[0, 1, 2].map((i) => (
-                <div
-                  key={i}
-                  className="w-2 h-2 rounded-full bg-banana-400"
-                  style={{ animation: `bounce 1.2s ease-in-out ${i * 0.2}s infinite` }}
-                />
+                <div key={i} className="w-2 h-2 rounded-full bg-banana-400"
+                  style={{ animation: `bounce 1.2s ease-in-out ${i * 0.2}s infinite` }} />
               ))}
             </div>
           </div>
@@ -378,12 +402,7 @@ export default function GeneratedImage({ imageDataUrl, status, error, prompt, ac
 
         {imageDataUrl && (
           <div className="relative w-full h-full animate-fade-in">
-            <img
-              src={imageDataUrl}
-              alt="Generated image"
-              className="w-full h-full object-contain"
-            />
-
+            <img src={imageDataUrl} alt="Generated image" className="w-full h-full object-contain" />
             <div className="absolute inset-0 bg-ink-900/0 hover:bg-ink-900/40 transition-all duration-300 group flex items-end justify-center p-4">
               <div className="translate-y-4 opacity-0 group-hover:translate-y-0 group-hover:opacity-100 transition-all duration-300 flex gap-2">
                 <button onClick={downloadImage} className="btn-primary py-2 px-4 text-sm">
