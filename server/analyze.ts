@@ -381,8 +381,8 @@ export async function analyzeImages(req: Request, res: Response) {
     })
 
     const messageParams = {
-      max_tokens: 4096,
-      system: SYSTEM_PROMPT,
+      max_tokens: 3000,
+      system: [{ type: 'text' as const, text: SYSTEM_PROMPT, cache_control: { type: 'ephemeral' as const } }],
       messages: [
         {
           role: 'user' as const,
@@ -397,7 +397,7 @@ export async function analyzeImages(req: Request, res: Response) {
       ],
     }
 
-    const MODELS = ['claude-sonnet-4-6', 'claude-haiku-4-5-20251001', 'claude-opus-4-6']
+    const MODELS = ['claude-sonnet-4-6', 'claude-opus-4-6']
     let lastErr: unknown
 
     for (const model of MODELS) {

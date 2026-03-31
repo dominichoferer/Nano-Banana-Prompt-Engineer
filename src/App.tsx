@@ -545,7 +545,8 @@ function JobPanel({
             <h3 className="font-display font-bold text-ink-900 text-lg mt-0.5">KI-Bildgenerierung</h3>
           </div>
           <GeneratedImage imageDataUrl={generatedImage} status={generationStatus}
-            error={generationError} prompt={prompt} activeModel={generatedModel} />
+            error={generationError} prompt={prompt} activeModel={generatedModel}
+            model={selectedModel} aspectRatio={selectedAspectRatio} />
           <div className="grid grid-cols-2 gap-3">
             <div className="flex flex-col gap-1.5">
               <span className="label-section">Modell</span>
