@@ -32,7 +32,19 @@ interface ShootingResult {
   label: string
 }
 
-function ShootingPanel({ imageDataUrl, basePrompt, model, aspectRatio }: {
+const ASPECT_RATIOS = ['1:1', '16:9', '9:16', '4:3', '3:4', '4:5', '5:4']
+
+function buildShootingPrompt(scenarioPrompt: string, customText: string): string {
+  const change = [scenarioPrompt, customText.trim()].filter(Boolean).join('. ')
+  return `USE THE UPLOADED IMAGE AS STRICT VISUAL REFERENCE. The subject, style, colors, lighting quality, and rendering of the original must be fully preserved.
+
+COMPOSITION CHANGE: ${change}
+
+Preserve EXACTLY from the reference: the subject's appearance, clothing, colors, rendering style, image quality, and all visual details that are NOT part of the composition change.
+OUTPUT: ONE single image only. No comparisons, no before/after, no grid.`
+}
+
+function ShootingPanel({ imageDataUrl, model, aspectRatio }: {
   imageDataUrl: string
   basePrompt: string
   model?: 'flash' | 'pro'
@@ -42,6 +54,7 @@ function ShootingPanel({ imageDataUrl, basePrompt, model, aspectRatio }: {
   const [selected, setSelected] = useState<Set<string>>(new Set())
   const [customText, setCustomText] = useState('')
   const [variantCount, setVariantCount] = useState<1 | 2 | 3>(2)
+  const [shootRatio, setShootRatio] = useState(aspectRatio ?? '1:1')
   const [results, setResults] = useState<ShootingResult[]>([])
   const [running, setRunning] = useState(false)
 
@@ -58,14 +71,14 @@ function ShootingPanel({ imageDataUrl, basePrompt, model, aspectRatio }: {
     const mimeType = header.match(/data:([^;]+)/)?.[1] ?? 'image/jpeg'
     const referenceImages = [{ mimeType, data: imgData }]
 
-    const jobs: Array<{ label: string; suffix: string }> = selected.size > 0
+    const jobs: Array<{ label: string; promptText: string }> = selected.size > 0
       ? SCENARIOS.filter(s => selected.has(s.id)).map(s => ({
           label: s.label,
-          suffix: [s.prompt, customText.trim()].filter(Boolean).join(', '),
+          promptText: buildShootingPrompt(s.prompt, customText),
         }))
       : Array.from({ length: variantCount }, (_, i) => ({
           label: `Variation ${i + 1}`,
-          suffix: customText.trim(),
+          promptText: buildShootingPrompt('', customText),
         }))
 
     setResults(jobs.map((j, i) => ({ id: i, status: 'generating', label: j.label })))
@@ -73,15 +86,14 @@ function ShootingPanel({ imageDataUrl, basePrompt, model, aspectRatio }: {
 
     await Promise.all(jobs.map(async (job, i) => {
       try {
-        const shootPrompt = [basePrompt.trim(), job.suffix].filter(Boolean).join(', ')
         const res = await fetch('/api/generate', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({
-            prompt: shootPrompt,
+            prompt: job.promptText,
             model: model ?? 'flash',
             resolution: '2K',
-            aspectRatio: aspectRatio ?? '1:1',
+            aspectRatio: shootRatio,
             referenceImages,
           }),
         })
@@ -161,6 +173,24 @@ function ShootingPanel({ imageDataUrl, basePrompt, model, aspectRatio }: {
               rows={3}
               className="input-field resize-none text-sm leading-relaxed"
             />
+          </div>
+
+          {/* Aspect ratio */}
+          <div className="flex flex-col gap-2">
+            <span className="label-section">Format</span>
+            <div className="flex flex-wrap gap-1.5">
+              {ASPECT_RATIOS.map(r => (
+                <button
+                  key={r}
+                  type="button"
+                  onClick={() => setShootRatio(r)}
+                  disabled={running}
+                  className={`px-3 py-1.5 rounded-lg text-xs font-sans font-medium transition-all ${shootRatio === r ? 'bg-banana-500 text-white shadow-sm' : 'bg-cream-100 text-ink-500 hover:bg-cream-200'}`}
+                >
+                  {r}
+                </button>
+              ))}
+            </div>
           </div>
 
           {/* Variant count — only when no scenarios selected */}
