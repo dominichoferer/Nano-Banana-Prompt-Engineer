@@ -242,13 +242,16 @@ function JobPanel({
   const [generatedImage, setGeneratedImage] = useState<string | null>(null)
   const [generatedModel, setGeneratedModel] = useState<string | undefined>()
   const [selectedModel, setSelectedModel] = useState<GenModel>('flash')
-  const [selectedResolution, setSelectedResolution] = useState<'1K' | '2K' | '4K'>('2K')
+  const [selectedResolution, setSelectedResolution] = useState<'1K' | '2K' | '4K' | 'auto'>('2K')
   const [selectedAspectRatio, setSelectedAspectRatio] = useState('1:1')
 
   const availableRatios = ratiosForModel(selectedModel)
+  const availableResolutions: Array<'auto' | '1K' | '2K' | '4K'> =
+    selectedModel === 'openai' ? ['auto', '1K', '2K', '4K'] : ['1K', '2K', '4K']
   const pickModel = (m: GenModel) => {
     setSelectedModel(m)
     if (!ratiosForModel(m).includes(selectedAspectRatio)) setSelectedAspectRatio('1:1')
+    if (m !== 'openai' && selectedResolution === 'auto') setSelectedResolution('2K')
   }
 
   const addImages = useCallback((files: FileList | File[]) => {
@@ -568,9 +571,9 @@ function JobPanel({
             <div className="flex flex-col gap-1.5">
               <span className="label-section">Auflösung</span>
               <div className="bg-cream-100 rounded-xl p-1 flex gap-1">
-                {(['1K', '2K', '4K'] as const).map((r) => (
+                {availableResolutions.map((r) => (
                   <button key={r} onClick={() => setSelectedResolution(r)} className={`mode-btn text-xs py-2 ${selectedResolution === r ? 'mode-btn-active' : 'mode-btn-inactive'}`}>
-                    {r}
+                    {r === 'auto' ? 'Auto' : r}
                   </button>
                 ))}
               </div>
@@ -632,13 +635,16 @@ export default function App() {
   const [quickOpen, setQuickOpen] = useState(false)
   const [quickPrompt, setQuickPrompt] = useState('')
   const [quickModel, setQuickModel] = useState<GenModel>('flash')
-  const [quickResolution, setQuickResolution] = useState<'1K' | '2K' | '4K'>('2K')
+  const [quickResolution, setQuickResolution] = useState<'1K' | '2K' | '4K' | 'auto'>('2K')
   const [quickAspectRatio, setQuickAspectRatio] = useState('1:1')
 
   const quickRatios = ratiosForModel(quickModel)
+  const quickResolutions: Array<'auto' | '1K' | '2K' | '4K'> =
+    quickModel === 'openai' ? ['auto', '1K', '2K', '4K'] : ['1K', '2K', '4K']
   const pickQuickModel = (m: GenModel) => {
     setQuickModel(m)
     if (!ratiosForModel(m).includes(quickAspectRatio)) setQuickAspectRatio('1:1')
+    if (m !== 'openai' && quickResolution === 'auto') setQuickResolution('2K')
   }
   const [quickStatus, setQuickStatus] = useState<GenerationStatus>('idle')
   const [quickError, setQuickError] = useState<string | null>(null)
@@ -760,10 +766,10 @@ export default function App() {
               <div className="flex flex-col gap-1">
                 <span className="label-section text-[10px]">Auflösung</span>
                 <div className="bg-cream-100 rounded-xl p-0.5 flex gap-0.5">
-                  {(['1K', '2K', '4K'] as const).map((r) => (
+                  {quickResolutions.map((r) => (
                     <button key={r} onClick={() => setQuickResolution(r)}
                       className={`mode-btn text-xs py-1.5 ${quickResolution === r ? 'mode-btn-active' : 'mode-btn-inactive'}`}>
-                      {r}
+                      {r === 'auto' ? 'Auto' : r}
                     </button>
                   ))}
                 </div>

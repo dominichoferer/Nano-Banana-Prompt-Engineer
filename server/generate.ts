@@ -45,21 +45,23 @@ const QUALITY_HINT: Record<string, string> = {
 
 // ── OpenAI config ───────────────────────────────────────────────────────────
 
-// Sizes pinned to known-good values per ratio × resolution tier.
-// All edges are multiples of 16 and ratio ≤ 3:1 (OpenAI constraints).
+// Official OpenAI sizes from the gpt-image-2 docs.
+// No native 4K square — fall back to 2K for 1:1 4K.
 const OPENAI_SIZES: Record<string, Record<string, string>> = {
-  '1:1':  { '1K': '1024x1024', '2K': '2048x2048', '4K': '2880x2880' },
-  '16:9': { '1K': '1536x864',  '2K': '2048x1152', '4K': '3840x2160' },
-  '9:16': { '1K': '864x1536',  '2K': '1152x2048', '4K': '2160x3840' },
+  '1:1':  { '1K': '1024x1024', '2K': '2048x2048', '4K': '2048x2048' },
+  '16:9': { '1K': '2048x1152', '2K': '2048x1152', '4K': '3840x2160' },
+  '9:16': { '1K': '1152x2048', '2K': '1152x2048', '4K': '2160x3840' },
 }
 
-const OPENAI_QUALITY: Record<string, 'low' | 'medium' | 'high'> = {
+const OPENAI_QUALITY: Record<string, 'low' | 'medium' | 'high' | 'auto'> = {
+  auto: 'auto',
   '1K': 'low',
   '2K': 'medium',
   '4K': 'high',
 }
 
 function openaiSize(ratio?: string, resolution?: string): string {
+  if (resolution === 'auto') return 'auto'
   const r = ratio && OPENAI_SIZES[ratio] ? ratio : '1:1'
   const t = resolution && OPENAI_SIZES[r][resolution] ? resolution : '2K'
   return OPENAI_SIZES[r][t]
