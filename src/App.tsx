@@ -2,8 +2,8 @@ import { useState, useCallback, useRef } from 'react'
 import * as pdfjsLib from 'pdfjs-dist'
 import PromptDisplay from './components/PromptDisplay'
 import GeneratedImage from './components/GeneratedImage'
-import type { UploadedImage, AnalysisStatus, GenerationStatus, PromptMode, FocusArea, MockupType } from './types'
-import { CHANGE_AREAS, MOCKUP_TYPES } from './types'
+import type { UploadedImage, AnalysisStatus, GenerationStatus, PromptMode, FocusArea, MockupType, GenModel } from './types'
+import { CHANGE_AREAS, MOCKUP_TYPES, GEN_MODELS, ratiosForModel } from './types'
 
 pdfjsLib.GlobalWorkerOptions.workerSrc = `https://unpkg.com/pdfjs-dist@${pdfjsLib.version}/build/pdf.worker.min.mjs`
 
@@ -241,9 +241,15 @@ function JobPanel({
   const [generationError, setGenerationError] = useState<string | null>(null)
   const [generatedImage, setGeneratedImage] = useState<string | null>(null)
   const [generatedModel, setGeneratedModel] = useState<string | undefined>()
-  const [selectedModel, setSelectedModel] = useState<'flash' | 'pro'>('flash')
+  const [selectedModel, setSelectedModel] = useState<GenModel>('flash')
   const [selectedResolution, setSelectedResolution] = useState<'1K' | '2K' | '4K'>('2K')
   const [selectedAspectRatio, setSelectedAspectRatio] = useState('1:1')
+
+  const availableRatios = ratiosForModel(selectedModel)
+  const pickModel = (m: GenModel) => {
+    setSelectedModel(m)
+    if (!ratiosForModel(m).includes(selectedAspectRatio)) setSelectedAspectRatio('1:1')
+  }
 
   const addImages = useCallback((files: FileList | File[]) => {
     const IMAGE_EXTS = new Set(['jpg', 'jpeg', 'png', 'webp', 'gif', 'pdf'])
@@ -551,12 +557,12 @@ function JobPanel({
             <div className="flex flex-col gap-1.5">
               <span className="label-section">Modell</span>
               <div className="bg-cream-100 rounded-xl p-1 flex gap-1">
-                <button onClick={() => setSelectedModel('flash')} className={`mode-btn text-xs py-2 ${selectedModel === 'flash' ? 'mode-btn-active' : 'mode-btn-inactive'}`}>
-                  ⚡ Flash <span className="text-[10px] opacity-60 ml-0.5">schnell</span>
-                </button>
-                <button onClick={() => setSelectedModel('pro')} className={`mode-btn text-xs py-2 ${selectedModel === 'pro' ? 'mode-btn-active' : 'mode-btn-inactive'}`}>
-                  ✦ Pro <span className="text-[10px] opacity-60 ml-0.5">best</span>
-                </button>
+                {GEN_MODELS.map((m) => (
+                  <button key={m.id} onClick={() => pickModel(m.id)}
+                    className={`mode-btn text-xs py-2 ${selectedModel === m.id ? 'mode-btn-active' : 'mode-btn-inactive'}`}>
+                    {m.icon} {m.label} <span className="text-[10px] opacity-60 ml-0.5">{m.hint}</span>
+                  </button>
+                ))}
               </div>
             </div>
             <div className="flex flex-col gap-1.5">
@@ -573,13 +579,18 @@ function JobPanel({
           <div className="flex flex-col gap-1.5">
             <span className="label-section">Format</span>
             <div className="flex flex-wrap gap-1.5">
-              {['1:1', '16:9', '9:16', '4:3', '3:4', '4:5', '5:4'].map((r) => (
+              {availableRatios.map((r) => (
                 <button key={r} onClick={() => setSelectedAspectRatio(r)}
                   className={`px-3 py-1.5 rounded-lg text-xs font-sans font-medium transition-all ${selectedAspectRatio === r ? 'bg-banana-500 text-white shadow-sm' : 'bg-cream-100 text-ink-500 hover:bg-cream-200'}`}>
                   {r}
                 </button>
               ))}
             </div>
+            {selectedModel === 'openai' && (
+              <p className="text-[11px] font-sans text-ink-400 mt-0.5">
+                OpenAI gpt-image-2 unterstützt nur 1:1, 16:9 und 9:16.
+              </p>
+            )}
           </div>
           <button onClick={handleGenerate} disabled={!canGenerate} className="btn-primary w-full py-4 text-base">
             {generationStatus === 'generating' ? (
@@ -588,14 +599,18 @@ function JobPanel({
                   <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
                   <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z" />
                 </svg>
-                {selectedModel === 'flash' ? 'Gemini Flash 3.1 generiert…' : 'Nano Banana Pro generiert…'}
+                {selectedModel === 'flash' ? 'Gemini Flash 3.1 generiert…'
+                  : selectedModel === 'pro' ? 'Nano Banana Pro generiert…'
+                  : 'OpenAI gpt-image-2 generiert…'}
               </>
             ) : (
               <>
                 <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                   <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 16l4.586-4.586a2 2 0 012.828 0L16 16m-2-2l1.586-1.586a2 2 0 012.828 0L20 14m-6-6h.01M6 20h12a2 2 0 002-2V6a2 2 0 00-2-2H6a2 2 0 00-2 2v12a2 2 0 002 2z" />
                 </svg>
-                {selectedModel === 'flash' ? 'mit Gemini Flash 3.1 generieren' : 'mit Nano Banana Pro generieren'}
+                {selectedModel === 'flash' ? 'mit Gemini Flash 3.1 generieren'
+                  : selectedModel === 'pro' ? 'mit Nano Banana Pro generieren'
+                  : 'mit OpenAI gpt-image-2 generieren'}
               </>
             )}
           </button>
@@ -616,9 +631,15 @@ export default function App() {
   const [jobs, setJobs] = useState<number[]>([Date.now()])
   const [quickOpen, setQuickOpen] = useState(false)
   const [quickPrompt, setQuickPrompt] = useState('')
-  const [quickModel, setQuickModel] = useState<'flash' | 'pro'>('flash')
+  const [quickModel, setQuickModel] = useState<GenModel>('flash')
   const [quickResolution, setQuickResolution] = useState<'1K' | '2K' | '4K'>('2K')
   const [quickAspectRatio, setQuickAspectRatio] = useState('1:1')
+
+  const quickRatios = ratiosForModel(quickModel)
+  const pickQuickModel = (m: GenModel) => {
+    setQuickModel(m)
+    if (!ratiosForModel(m).includes(quickAspectRatio)) setQuickAspectRatio('1:1')
+  }
   const [quickStatus, setQuickStatus] = useState<GenerationStatus>('idle')
   const [quickError, setQuickError] = useState<string | null>(null)
   const [quickImage, setQuickImage] = useState<string | null>(null)
@@ -728,10 +749,10 @@ export default function App() {
               <div className="flex flex-col gap-1">
                 <span className="label-section text-[10px]">Modell</span>
                 <div className="bg-cream-100 rounded-xl p-0.5 flex gap-0.5">
-                  {(['flash', 'pro'] as const).map((m) => (
-                    <button key={m} onClick={() => setQuickModel(m)}
-                      className={`mode-btn text-xs py-1.5 ${quickModel === m ? 'mode-btn-active' : 'mode-btn-inactive'}`}>
-                      {m === 'flash' ? '⚡ Flash' : '✦ Pro'}
+                  {GEN_MODELS.map((m) => (
+                    <button key={m.id} onClick={() => pickQuickModel(m.id)}
+                      className={`mode-btn text-xs py-1.5 ${quickModel === m.id ? 'mode-btn-active' : 'mode-btn-inactive'}`}>
+                      {m.icon} {m.label}
                     </button>
                   ))}
                 </div>
@@ -750,7 +771,7 @@ export default function App() {
               <div className="flex flex-col gap-1">
                 <span className="label-section text-[10px]">Format</span>
                 <div className="bg-cream-100 rounded-xl p-0.5 flex gap-0.5 flex-wrap">
-                  {(['1:1', '16:9', '9:16', '4:3', '3:4', '4:5', '5:4'] as const).map((r) => (
+                  {quickRatios.map((r) => (
                     <button key={r} onClick={() => setQuickAspectRatio(r)}
                       className={`mode-btn text-xs py-1.5 ${quickAspectRatio === r ? 'mode-btn-active' : 'mode-btn-inactive'}`}>
                       {r}

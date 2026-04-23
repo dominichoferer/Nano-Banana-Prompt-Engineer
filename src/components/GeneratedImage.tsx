@@ -1,5 +1,6 @@
 import { useState } from 'react'
-import type { GenerationStatus } from '../types'
+import type { GenerationStatus, GenModel } from '../types'
+import { GEN_MODELS, ratiosForModel } from '../types'
 
 interface Props {
   imageDataUrl: string | null
@@ -7,7 +8,7 @@ interface Props {
   error: string | null
   prompt: string
   activeModel?: string
-  model?: 'flash' | 'pro'
+  model?: GenModel
   aspectRatio?: string
 }
 
@@ -24,8 +25,6 @@ const SCENARIOS = [
   { id: 'produktshot',     label: '📦 Produktshot',       prompt: 'professional product photography, clean studio setup, neutral background' },
   { id: 'editorial',       label: '✏️ Editorial',         prompt: 'editorial photography style, fashion magazine aesthetic' },
 ]
-
-const ASPECT_RATIOS = ['1:1', '16:9', '9:16', '4:3', '3:4', '4:5', '5:4']
 
 interface ShootingResult {
   id: number
@@ -76,7 +75,7 @@ function compressToLimit(dataUrl: string, maxBytes = 3_500_000): Promise<string>
 function ShootingPanel({ imageDataUrl, model, aspectRatio }: {
   imageDataUrl: string
   basePrompt: string
-  model?: 'flash' | 'pro'
+  model?: GenModel
   aspectRatio?: string
 }) {
   const [open, setOpen] = useState(false)
@@ -84,8 +83,14 @@ function ShootingPanel({ imageDataUrl, model, aspectRatio }: {
   const [customText, setCustomText] = useState('')
   const [customAsExtra, setCustomAsExtra] = useState(false)
   const [variantCount, setVariantCount] = useState<1 | 2 | 3>(2)
-  const [shootRatio, setShootRatio] = useState(aspectRatio ?? '1:1')
-  const [shootModel, setShootModel] = useState<'flash' | 'pro'>(model ?? 'flash')
+  const [shootModel, setShootModel] = useState<GenModel>(model ?? 'flash')
+  const initialRatio = aspectRatio && ratiosForModel(shootModel).includes(aspectRatio) ? aspectRatio : '1:1'
+  const [shootRatio, setShootRatio] = useState(initialRatio)
+  const shootRatios = ratiosForModel(shootModel)
+  const pickShootModel = (m: GenModel) => {
+    setShootModel(m)
+    if (!ratiosForModel(m).includes(shootRatio)) setShootRatio('1:1')
+  }
   const [results, setResults] = useState<ShootingResult[]>([])
   const [running, setRunning] = useState(false)
 
@@ -237,14 +242,12 @@ function ShootingPanel({ imageDataUrl, model, aspectRatio }: {
           <div className="flex flex-col gap-2">
             <span className="label-section">Modell</span>
             <div className="bg-cream-100 rounded-xl p-1 flex gap-1">
-              <button type="button" onClick={() => setShootModel('flash')} disabled={running}
-                className={`mode-btn text-xs py-2 ${shootModel === 'flash' ? 'mode-btn-active' : 'mode-btn-inactive'}`}>
-                ⚡ Flash <span className="text-[10px] opacity-60 ml-0.5">schnell</span>
-              </button>
-              <button type="button" onClick={() => setShootModel('pro')} disabled={running}
-                className={`mode-btn text-xs py-2 ${shootModel === 'pro' ? 'mode-btn-active' : 'mode-btn-inactive'}`}>
-                ✦ Pro <span className="text-[10px] opacity-60 ml-0.5">best</span>
-              </button>
+              {GEN_MODELS.map((m) => (
+                <button key={m.id} type="button" onClick={() => pickShootModel(m.id)} disabled={running}
+                  className={`mode-btn text-xs py-2 ${shootModel === m.id ? 'mode-btn-active' : 'mode-btn-inactive'}`}>
+                  {m.icon} {m.label} <span className="text-[10px] opacity-60 ml-0.5">{m.hint}</span>
+                </button>
+              ))}
             </div>
           </div>
 
@@ -252,7 +255,7 @@ function ShootingPanel({ imageDataUrl, model, aspectRatio }: {
           <div className="flex flex-col gap-2">
             <span className="label-section">Format</span>
             <div className="flex flex-wrap gap-1.5">
-              {ASPECT_RATIOS.map(r => (
+              {shootRatios.map(r => (
                 <button key={r} type="button" onClick={() => setShootRatio(r)} disabled={running}
                   className={`px-3 py-1.5 rounded-lg text-xs font-sans font-medium transition-all ${
                     shootRatio === r ? 'bg-banana-500 text-white shadow-sm' : 'bg-cream-100 text-ink-500 hover:bg-cream-200'

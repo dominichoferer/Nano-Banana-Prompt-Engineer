@@ -362,7 +362,7 @@ app.post('/api/analyze', upload.array('images', 10), async (req: Request, res: R
   }
 })
 
-// ── Generate endpoint (Gemini image generation) ─────────────────────────────
+// ── Generate endpoint (Gemini + OpenAI image generation) ────────────────────
 
 interface GeminiResponse {
   candidates?: Array<{
@@ -371,80 +371,172 @@ interface GeminiResponse {
   error?: { message: string; code: number }
 }
 
-const SUPPORTED_API_RATIOS = new Set(['1:1', '16:9', '9:16', '4:3', '3:4', '4:5', '5:4'])
+interface OpenAIImageResponse {
+  data?: Array<{ b64_json?: string; url?: string }>
+  error?: { message: string; type?: string; code?: string }
+}
 
+type GenModel = 'flash' | 'pro' | 'openai'
 
-const GEN_MODEL_IDS: Record<string, string> = {
+interface GenerateBody {
+  prompt: string
+  aspectRatio?: string
+  resolution?: string
+  model?: GenModel
+  referenceImages?: Array<{ mimeType: string; data: string }>
+}
+
+const GEMINI_RATIOS = new Set(['1:1', '16:9', '9:16', '4:3', '3:4', '4:5', '5:4'])
+
+const GEMINI_MODEL_IDS: Record<string, string> = {
   flash: 'gemini-3.1-flash-image-preview',
   pro:   'gemini-3-pro-image-preview',
 }
-const GEN_MODEL_LABELS: Record<string, string> = {
-  flash: 'Gemini 3.1 Flash',
-  pro:   'Gemini 3 Pro',
+
+const MODEL_LABELS: Record<GenModel, string> = {
+  flash:  'Gemini 3.1 Flash',
+  pro:    'Gemini 3 Pro',
+  openai: 'OpenAI gpt-image-2',
 }
-const GEN_QUALITY_HINT: Record<string, string> = {
+
+const QUALITY_HINT: Record<string, string> = {
   '1K': 'high quality, detailed',
   '2K': 'ultra high quality, 2K resolution, highly detailed, sharp',
   '4K': 'ultra HD, 4K resolution, hyper-detailed, maximum sharpness, professional quality, ultra sharp edges, rich textures',
 }
 
+const OPENAI_SIZES: Record<string, Record<string, string>> = {
+  '1:1':  { '1K': '1024x1024', '2K': '2048x2048', '4K': '2880x2880' },
+  '16:9': { '1K': '1536x864',  '2K': '2048x1152', '4K': '3840x2160' },
+  '9:16': { '1K': '864x1536',  '2K': '1152x2048', '4K': '2160x3840' },
+}
+
+const OPENAI_QUALITY: Record<string, 'low' | 'medium' | 'high'> = {
+  '1K': 'low', '2K': 'medium', '4K': 'high',
+}
+
+function openaiSize(ratio?: string, resolution?: string): string {
+  const r = ratio && OPENAI_SIZES[ratio] ? ratio : '1:1'
+  const t = resolution && OPENAI_SIZES[r][resolution] ? resolution : '2K'
+  return OPENAI_SIZES[r][t]
+}
+
+async function callOpenAI(
+  body: GenerateBody,
+  signal: AbortSignal,
+): Promise<{ image: string; prompt: string }> {
+  const apiKey = process.env.OPENAI_API_KEY
+  if (!apiKey) throw new Error('OPENAI_API_KEY not configured')
+
+  const size = openaiSize(body.aspectRatio, body.resolution)
+  const quality = OPENAI_QUALITY[body.resolution ?? '2K'] ?? 'medium'
+  const prompt = body.prompt.trim()
+  const hasRefs = (body.referenceImages?.length ?? 0) > 0
+  const headers = { Authorization: `Bearer ${apiKey}` }
+
+  let fetchRes: globalThis.Response
+
+  if (hasRefs) {
+    const form = new FormData()
+    form.append('model', 'gpt-image-2')
+    form.append('prompt', prompt)
+    form.append('size', size)
+    form.append('quality', quality)
+    form.append('n', '1')
+    for (const [i, ref] of (body.referenceImages ?? []).entries()) {
+      const bytes = Buffer.from(ref.data, 'base64')
+      const blob = new Blob([new Uint8Array(bytes)], { type: ref.mimeType || 'image/jpeg' })
+      const ext = (ref.mimeType?.split('/')[1] ?? 'jpg').replace('jpeg', 'jpg')
+      form.append('image[]', blob, `reference-${i + 1}.${ext}`)
+    }
+    fetchRes = await fetch('https://api.openai.com/v1/images/edits', {
+      method: 'POST', headers, body: form, signal,
+    })
+  } else {
+    fetchRes = await fetch('https://api.openai.com/v1/images/generations', {
+      method: 'POST',
+      headers: { ...headers, 'Content-Type': 'application/json' },
+      body: JSON.stringify({ model: 'gpt-image-2', prompt, size, quality, n: 1 }),
+      signal,
+    })
+  }
+
+  const data = await fetchRes.json() as OpenAIImageResponse
+  if (!fetchRes.ok) throw new Error(data.error?.message || `OpenAI error ${fetchRes.status}`)
+
+  const first = data.data?.[0]
+  if (first?.b64_json) return { image: `data:image/png;base64,${first.b64_json}`, prompt }
+  if (first?.url) return { image: first.url, prompt }
+  throw new Error('No image returned from OpenAI')
+}
+
+async function callGemini(
+  body: GenerateBody,
+  signal: AbortSignal,
+): Promise<{ image: string; prompt: string }> {
+  const apiKey = process.env.GOOGLE_AI_API_KEY
+  if (!apiKey) throw new Error('GOOGLE_AI_API_KEY not configured')
+
+  const modelKey = body.model === 'pro' ? 'pro' : 'flash'
+  const modelId = GEMINI_MODEL_IDS[modelKey]
+
+  const qualityHint = body.resolution ? QUALITY_HINT[body.resolution] ?? '' : ''
+  const nativeRatio = body.aspectRatio && GEMINI_RATIOS.has(body.aspectRatio)
+  const ratioHint = body.aspectRatio && !nativeRatio ? `, ${body.aspectRatio} aspect ratio` : ''
+  const enrichedPrompt = [body.prompt.trim(), qualityHint, ratioHint].filter(Boolean).join(', ')
+
+  const imageConfig: Record<string, string> = {}
+  if (body.resolution === '4K') imageConfig.imageSize = '4K'
+  else if (body.resolution === '2K') imageConfig.imageSize = '2K'
+  if (nativeRatio && body.aspectRatio) imageConfig.aspectRatio = body.aspectRatio
+
+  const url = `https://generativelanguage.googleapis.com/v1beta/models/${modelId}:generateContent?key=${apiKey}`
+  const fetchRes = await fetch(url, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    signal,
+    body: JSON.stringify({
+      contents: [{ parts: [
+        ...(body.referenceImages ?? []).map((img) => ({ inlineData: { mimeType: img.mimeType, data: img.data } })),
+        { text: enrichedPrompt },
+      ] }],
+      generationConfig: {
+        responseModalities: ['IMAGE', 'TEXT'],
+        ...(Object.keys(imageConfig).length > 0 ? { imageConfig } : {}),
+      },
+    }),
+  })
+  const data = await fetchRes.json() as GeminiResponse
+  if (!fetchRes.ok) throw new Error(data.error?.message || `Gemini error ${fetchRes.status}`)
+
+  const parts = data.candidates?.[0]?.content?.parts ?? []
+  const img = parts.find((part) => part.inlineData?.mimeType?.startsWith('image/'))
+  if (!img?.inlineData) throw new Error('No image returned from Gemini')
+
+  return {
+    image: `data:${img.inlineData.mimeType};base64,${img.inlineData.data}`,
+    prompt: enrichedPrompt,
+  }
+}
+
 app.post('/api/generate', async (req: Request, res: Response) => {
   try {
-    const { prompt, aspectRatio, resolution, model, referenceImages } = req.body as {
-      prompt: string
-      aspectRatio?: string
-      resolution?: string
-      model?: 'flash' | 'pro'
-      referenceImages?: Array<{ mimeType: string; data: string }>
-    }
-    if (!prompt?.trim()) return res.status(400).json({ error: 'Prompt is required' })
-    if (!process.env.GOOGLE_AI_API_KEY) return res.status(500).json({ error: 'GOOGLE_AI_API_KEY not configured' })
+    const body = req.body as GenerateBody
+    if (!body.prompt?.trim()) return res.status(400).json({ error: 'Prompt is required' })
 
-    const apiKey = process.env.GOOGLE_AI_API_KEY
-    const modelKey = model ?? 'flash'
-    const modelId = GEN_MODEL_IDS[modelKey]
-
-    const qualityHint = resolution ? GEN_QUALITY_HINT[resolution] ?? '' : ''
-    const nativeRatio = aspectRatio && SUPPORTED_API_RATIOS.has(aspectRatio)
-    const ratioHint = aspectRatio && !nativeRatio ? `, ${aspectRatio} aspect ratio` : ''
-    const enrichedPrompt = [prompt.trim(), qualityHint, ratioHint].filter(Boolean).join(', ')
-
-    const imageConfig: Record<string, string> = {}
-    if (resolution === '4K') imageConfig.imageSize = '4K'
-    else if (resolution === '2K') imageConfig.imageSize = '2K'
-    if (nativeRatio && aspectRatio) imageConfig.aspectRatio = aspectRatio
-
-    const url = `https://generativelanguage.googleapis.com/v1beta/models/${modelId}:generateContent?key=${apiKey}`
+    const modelKey: GenModel = body.model ?? 'flash'
     const abortController = new AbortController()
     const abortTimeout = setTimeout(() => abortController.abort(), 270_000)
-    const fetchRes = await fetch(url, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      signal: abortController.signal,
-      body: JSON.stringify({
-        contents: [{ parts: [
-          ...(referenceImages ?? []).map((img) => ({ inlineData: { mimeType: img.mimeType, data: img.data } })),
-          { text: enrichedPrompt },
-        ] }],
-        generationConfig: {
-          responseModalities: ['IMAGE', 'TEXT'],
-          ...(Object.keys(imageConfig).length > 0 ? { imageConfig } : {}),
-        },
-      }),
-    })
-    clearTimeout(abortTimeout)
-    const data = await fetchRes.json() as GeminiResponse
-    if (!fetchRes.ok) throw new Error(data.error?.message || `Gemini error ${fetchRes.status}`)
 
-    const parts = data.candidates?.[0]?.content?.parts ?? []
-    const img = parts.find((part) => part.inlineData?.mimeType?.startsWith('image/'))
-    if (!img?.inlineData) throw new Error('No image returned from Gemini')
+    try {
+      const result = modelKey === 'openai'
+        ? await callOpenAI(body, abortController.signal)
+        : await callGemini(body, abortController.signal)
 
-    res.json({
-      image: `data:${img.inlineData.mimeType};base64,${img.inlineData.data}`,
-      prompt: enrichedPrompt,
-      model: GEN_MODEL_LABELS[modelKey],
-    })
+      res.json({ image: result.image, prompt: result.prompt, model: MODEL_LABELS[modelKey] })
+    } finally {
+      clearTimeout(abortTimeout)
+    }
   } catch (err) {
     res.status(500).json({ error: err instanceof Error ? err.message : 'Unknown error' })
   }

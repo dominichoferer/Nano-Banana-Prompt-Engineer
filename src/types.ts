@@ -39,6 +39,31 @@ export const MOCKUP_TYPES: MockupTypeDef[] = [
   { id: 'verpackung',  icon: '📦', label: 'Verpackung' },
 ]
 
+// ── Image-generation model config ────────────────────────────────────────────
+
+export type GenModel = 'flash' | 'pro' | 'openai'
+
+export interface GenModelDef {
+  id: GenModel
+  icon: string
+  label: string
+  hint: string
+  ratios: string[]
+}
+
+export const ALL_RATIOS = ['1:1', '16:9', '9:16', '4:3', '3:4', '4:5', '5:4'] as const
+export const OPENAI_RATIOS = ['1:1', '16:9', '9:16']
+
+export const GEN_MODELS: GenModelDef[] = [
+  { id: 'flash',  icon: '⚡', label: 'Flash',  hint: 'schnell',   ratios: [...ALL_RATIOS] },
+  { id: 'pro',    icon: '✦',  label: 'Pro',    hint: 'best',      ratios: [...ALL_RATIOS] },
+  { id: 'openai', icon: '🎨', label: 'OpenAI', hint: 'gpt-image', ratios: OPENAI_RATIOS   },
+]
+
+export function ratiosForModel(model: GenModel): string[] {
+  return GEN_MODELS.find((m) => m.id === model)?.ratios ?? [...ALL_RATIOS]
+}
+
 export type FocusArea =
   | 'pose' | 'lighting' | 'color' | 'background' // change group
 
