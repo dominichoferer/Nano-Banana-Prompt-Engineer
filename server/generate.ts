@@ -12,7 +12,7 @@ interface OpenAIImageResponse {
   error?: { message: string; type?: string; code?: string }
 }
 
-type GenModel = 'flash' | 'pro' | 'openai'
+type GenModel = 'pro' | 'openai'
 
 interface GenerateBody {
   prompt: string
@@ -26,14 +26,10 @@ interface GenerateBody {
 
 const GEMINI_RATIOS = new Set(['1:1', '16:9', '9:16', '4:3', '3:4', '4:5', '5:4'])
 
-const GEMINI_MODEL_IDS: Record<string, string> = {
-  flash: 'gemini-3.1-flash-image-preview',
-  pro:   'gemini-3-pro-image-preview',
-}
+const GEMINI_MODEL_ID = 'gemini-3-pro-image-preview'
 
 const MODEL_LABELS: Record<GenModel, string> = {
-  flash:  'Gemini 3.1 Flash',
-  pro:    'Gemini 3 Pro',
+  pro:    'Nano Banana Pro (Gemini 3)',
   openai: 'OpenAI gpt-image-2',
 }
 
@@ -143,12 +139,10 @@ async function callGemini(
   const apiKey = process.env.GOOGLE_AI_API_KEY
   if (!apiKey) throw new Error('GOOGLE_AI_API_KEY not configured')
 
-  const modelKey = body.model === 'pro' ? 'pro' : 'flash'
-  const modelId = GEMINI_MODEL_IDS[modelKey]
-
   const qualityHint = body.resolution ? QUALITY_HINT[body.resolution] ?? '' : ''
-  const nativeRatio = body.aspectRatio && GEMINI_RATIOS.has(body.aspectRatio)
-  const ratioHint = body.aspectRatio && !nativeRatio ? `, ${body.aspectRatio} aspect ratio` : ''
+  const isAutoRatio = body.aspectRatio === 'auto'
+  const nativeRatio = !isAutoRatio && body.aspectRatio && GEMINI_RATIOS.has(body.aspectRatio)
+  const ratioHint = !isAutoRatio && body.aspectRatio && !nativeRatio ? `, ${body.aspectRatio} aspect ratio` : ''
   const enrichedPrompt = [body.prompt.trim(), qualityHint, ratioHint].filter(Boolean).join(', ')
 
   const imageConfig: Record<string, string> = {}
@@ -156,7 +150,7 @@ async function callGemini(
   else if (body.resolution === '2K') imageConfig.imageSize = '2K'
   if (nativeRatio && body.aspectRatio) imageConfig.aspectRatio = body.aspectRatio
 
-  const url = `https://generativelanguage.googleapis.com/v1beta/models/${modelId}:generateContent?key=${apiKey}`
+  const url = `https://generativelanguage.googleapis.com/v1beta/models/${GEMINI_MODEL_ID}:generateContent?key=${apiKey}`
 
   const refParts = (body.referenceImages ?? []).map((img) => ({
     inlineData: { mimeType: img.mimeType, data: img.data },
@@ -195,7 +189,7 @@ export async function generateImage(req: Request, res: Response) {
     const body = req.body as GenerateBody
     if (!body.prompt?.trim()) return res.status(400).json({ error: 'Prompt is required' })
 
-    const modelKey: GenModel = body.model ?? 'flash'
+    const modelKey: GenModel = body.model === 'openai' ? 'openai' : 'pro'
     console.log(`[generate] model=${modelKey} resolution=${body.resolution} ratio=${body.aspectRatio}`)
 
     const abortController = new AbortController()

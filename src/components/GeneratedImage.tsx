@@ -10,6 +10,7 @@ interface Props {
   activeModel?: string
   model?: GenModel
   aspectRatio?: string
+  onClear?: () => void
 }
 
 // ── Shooting Simulation ───────────────────────────────────────────────────────
@@ -83,7 +84,7 @@ function ShootingPanel({ imageDataUrl, model, aspectRatio }: {
   const [customText, setCustomText] = useState('')
   const [customAsExtra, setCustomAsExtra] = useState(false)
   const [variantCount, setVariantCount] = useState<1 | 2 | 3>(2)
-  const [shootModel, setShootModel] = useState<GenModel>(model ?? 'flash')
+  const [shootModel, setShootModel] = useState<GenModel>(model ?? 'pro')
   const initialRatio = aspectRatio && ratiosForModel(shootModel).includes(aspectRatio) ? aspectRatio : '1:1'
   const [shootRatio, setShootRatio] = useState(initialRatio)
   const shootRatios = ratiosForModel(shootModel)
@@ -260,7 +261,7 @@ function ShootingPanel({ imageDataUrl, model, aspectRatio }: {
                   className={`px-3 py-1.5 rounded-lg text-xs font-sans font-medium transition-all ${
                     shootRatio === r ? 'bg-banana-500 text-white shadow-sm' : 'bg-cream-100 text-ink-500 hover:bg-cream-200'
                   }`}>
-                  {r}
+                  {r === 'auto' ? 'Auto' : r}
                 </button>
               ))}
             </div>
@@ -364,7 +365,7 @@ function ShootingPanel({ imageDataUrl, model, aspectRatio }: {
 
 // ── GeneratedImage ────────────────────────────────────────────────────────────
 
-export default function GeneratedImage({ imageDataUrl, status, error, prompt, activeModel, model, aspectRatio }: Props) {
+export default function GeneratedImage({ imageDataUrl, status, error, prompt, activeModel, model, aspectRatio, onClear }: Props) {
   const downloadImage = () => {
     if (!imageDataUrl) return
     const a = document.createElement('a')
@@ -435,6 +436,17 @@ export default function GeneratedImage({ imageDataUrl, status, error, prompt, ac
         {imageDataUrl && (
           <div className="relative w-full h-full animate-fade-in">
             <img src={imageDataUrl} alt="Generated image" className="w-full h-full object-contain" />
+            {onClear && (
+              <button
+                onClick={onClear}
+                title="Bild löschen — nächste Generierung startet komplett neu"
+                className="absolute top-3 right-3 w-8 h-8 rounded-full bg-white/90 hover:bg-red-500 hover:text-white text-ink-700 shadow-card backdrop-blur flex items-center justify-center transition-all duration-150 z-10"
+              >
+                <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2.5} d="M6 18L18 6M6 6l12 12" />
+                </svg>
+              </button>
+            )}
             <div className="absolute inset-0 bg-ink-900/0 hover:bg-ink-900/40 transition-all duration-300 group flex items-end justify-center p-4">
               <div className="translate-y-4 opacity-0 group-hover:translate-y-0 group-hover:opacity-100 transition-all duration-300 flex gap-2">
                 <button onClick={downloadImage} className="btn-primary py-2 px-4 text-sm">

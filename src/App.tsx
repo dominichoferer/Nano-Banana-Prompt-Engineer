@@ -241,7 +241,7 @@ function JobPanel({
   const [generationError, setGenerationError] = useState<string | null>(null)
   const [generatedImage, setGeneratedImage] = useState<string | null>(null)
   const [generatedModel, setGeneratedModel] = useState<string | undefined>()
-  const [selectedModel, setSelectedModel] = useState<GenModel>('flash')
+  const [selectedModel, setSelectedModel] = useState<GenModel>('pro')
   const [selectedResolution, setSelectedResolution] = useState<'1K' | '2K' | '4K' | 'auto'>('2K')
   const [selectedAspectRatio, setSelectedAspectRatio] = useState('1:1')
 
@@ -555,7 +555,13 @@ function JobPanel({
           </div>
           <GeneratedImage imageDataUrl={generatedImage} status={generationStatus}
             error={generationError} prompt={prompt} activeModel={generatedModel}
-            model={selectedModel} aspectRatio={selectedAspectRatio} />
+            model={selectedModel} aspectRatio={selectedAspectRatio}
+            onClear={() => {
+              setGeneratedImage(null)
+              setGeneratedModel(undefined)
+              setGenerationStatus('idle')
+              setGenerationError(null)
+            }} />
           <div className="grid grid-cols-2 gap-3">
             <div className="flex flex-col gap-1.5">
               <span className="label-section">Modell</span>
@@ -585,7 +591,7 @@ function JobPanel({
               {availableRatios.map((r) => (
                 <button key={r} onClick={() => setSelectedAspectRatio(r)}
                   className={`px-3 py-1.5 rounded-lg text-xs font-sans font-medium transition-all ${selectedAspectRatio === r ? 'bg-banana-500 text-white shadow-sm' : 'bg-cream-100 text-ink-500 hover:bg-cream-200'}`}>
-                  {r}
+                  {r === 'auto' ? 'Auto' : r}
                 </button>
               ))}
             </div>
@@ -602,8 +608,7 @@ function JobPanel({
                   <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
                   <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z" />
                 </svg>
-                {selectedModel === 'flash' ? 'Gemini Flash 3.1 generiert…'
-                  : selectedModel === 'pro' ? 'Nano Banana Pro generiert…'
+                {selectedModel === 'pro' ? 'Nano Banana Pro generiert…'
                   : 'OpenAI gpt-image-2 generiert…'}
               </>
             ) : (
@@ -611,8 +616,7 @@ function JobPanel({
                 <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                   <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 16l4.586-4.586a2 2 0 012.828 0L16 16m-2-2l1.586-1.586a2 2 0 012.828 0L20 14m-6-6h.01M6 20h12a2 2 0 002-2V6a2 2 0 00-2-2H6a2 2 0 00-2 2v12a2 2 0 002 2z" />
                 </svg>
-                {selectedModel === 'flash' ? 'mit Gemini Flash 3.1 generieren'
-                  : selectedModel === 'pro' ? 'mit Nano Banana Pro generieren'
+                {selectedModel === 'pro' ? 'mit Nano Banana Pro generieren'
                   : 'mit OpenAI gpt-image-2 generieren'}
               </>
             )}
@@ -634,7 +638,7 @@ export default function App() {
   const [jobs, setJobs] = useState<number[]>([Date.now()])
   const [quickOpen, setQuickOpen] = useState(false)
   const [quickPrompt, setQuickPrompt] = useState('')
-  const [quickModel, setQuickModel] = useState<GenModel>('flash')
+  const [quickModel, setQuickModel] = useState<GenModel>('pro')
   const [quickResolution, setQuickResolution] = useState<'1K' | '2K' | '4K' | 'auto'>('2K')
   const [quickAspectRatio, setQuickAspectRatio] = useState('1:1')
 
@@ -780,7 +784,7 @@ export default function App() {
                   {quickRatios.map((r) => (
                     <button key={r} onClick={() => setQuickAspectRatio(r)}
                       className={`mode-btn text-xs py-1.5 ${quickAspectRatio === r ? 'mode-btn-active' : 'mode-btn-inactive'}`}>
-                      {r}
+                      {r === 'auto' ? 'Auto' : r}
                     </button>
                   ))}
                 </div>
@@ -792,6 +796,15 @@ export default function App() {
             {quickImage && (
               <div className="relative rounded-2xl overflow-hidden bg-cream-100 animate-scale-in">
                 <img src={quickImage} alt="Generated" className="w-full object-contain max-h-[500px]" />
+                <button
+                  onClick={() => { setQuickImage(null); setQuickStatus('idle'); setQuickError(null) }}
+                  title="Bild löschen — nächste Generierung startet komplett neu"
+                  className="absolute top-3 right-3 w-8 h-8 rounded-full bg-white/90 hover:bg-red-500 hover:text-white text-ink-700 shadow-card backdrop-blur flex items-center justify-center transition-all duration-150 z-10"
+                >
+                  <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2.5} d="M6 18L18 6M6 6l12 12" />
+                  </svg>
+                </button>
                 <div className="absolute bottom-3 right-3">
                   <button onClick={() => { const a = document.createElement('a'); a.href = quickImage!; a.download = `quick-${Date.now()}.jpg`; a.click() }}
                     className="btn-primary py-2 px-3 text-xs">
@@ -825,7 +838,7 @@ export default function App() {
       <footer className="border-t border-cream-200 bg-white mt-auto">
         <div className="max-w-4xl mx-auto px-5 py-4 flex items-center justify-between">
           <p className="text-ink-300 text-xs font-sans">🍌 Nano Banana AI Studio</p>
-          <p className="text-ink-300 text-xs font-sans">Claude Sonnet Vision · Gemini Flash & Pro</p>
+          <p className="text-ink-300 text-xs font-sans">Claude Sonnet Vision · Nano Banana Pro · OpenAI gpt-image-2</p>
         </div>
       </footer>
     </div>

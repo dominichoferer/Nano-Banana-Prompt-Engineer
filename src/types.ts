@@ -41,7 +41,7 @@ export const MOCKUP_TYPES: MockupTypeDef[] = [
 
 // ── Image-generation model config ────────────────────────────────────────────
 
-export type GenModel = 'flash' | 'pro' | 'openai'
+export type GenModel = 'pro' | 'openai'
 
 export interface GenModelDef {
   id: GenModel
@@ -51,17 +51,16 @@ export interface GenModelDef {
   ratios: string[]
 }
 
-export const ALL_RATIOS = ['1:1', '16:9', '9:16', '4:3', '3:4', '4:5', '5:4'] as const
+export const GEMINI_RATIOS = ['auto', '1:1', '16:9', '9:16', '4:3', '3:4', '4:5', '5:4']
 export const OPENAI_RATIOS = ['1:1', '16:9', '9:16']
 
 export const GEN_MODELS: GenModelDef[] = [
-  { id: 'flash',  icon: '⚡', label: 'Flash',  hint: 'schnell',   ratios: [...ALL_RATIOS] },
-  { id: 'pro',    icon: '✦',  label: 'Pro',    hint: 'best',      ratios: [...ALL_RATIOS] },
-  { id: 'openai', icon: '🎨', label: 'OpenAI', hint: 'gpt-image', ratios: OPENAI_RATIOS   },
+  { id: 'pro',    icon: '✦',  label: 'Nano Banana Pro', hint: 'Gemini',    ratios: GEMINI_RATIOS },
+  { id: 'openai', icon: '🎨', label: 'OpenAI',          hint: 'gpt-image', ratios: OPENAI_RATIOS },
 ]
 
 export function ratiosForModel(model: GenModel): string[] {
-  return GEN_MODELS.find((m) => m.id === model)?.ratios ?? [...ALL_RATIOS]
+  return GEN_MODELS.find((m) => m.id === model)?.ratios ?? GEMINI_RATIOS
 }
 
 export type FocusArea =
