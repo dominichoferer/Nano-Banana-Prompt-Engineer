@@ -45,15 +45,14 @@ const QUALITY_HINT: Record<string, string> = {
 
 // Official OpenAI sizes from the gpt-image-2 docs.
 // No native 4K square — fall back to 2K for 1:1 4K.
-// All edges multiples of 16, max edge ≤ 3840, total pixels 655,360–8,294,400.
+// Only OpenAI's "popular sizes" — anything else silently falls back to 1024x1024.
+// 3:2 / 2:3 only have a 1K popular size, so 2K/4K reuse it (tier just bumps quality).
 const OPENAI_SIZES: Record<string, Record<string, string>> = {
   '1:1':  { '1K': '1024x1024', '2K': '2048x2048', '4K': '2048x2048' },
   '16:9': { '1K': '2048x1152', '2K': '2048x1152', '4K': '3840x2160' },
   '9:16': { '1K': '1152x2048', '2K': '1152x2048', '4K': '2160x3840' },
-  '4:5':  { '1K': '1024x1280', '2K': '1632x2048', '4K': '2048x2560' },
-  '5:4':  { '1K': '1280x1024', '2K': '2048x1632', '4K': '2560x2048' },
-  '3:2':  { '1K': '1536x1024', '2K': '2048x1360', '4K': '3072x2048' },
-  '2:3':  { '1K': '1024x1536', '2K': '1360x2048', '4K': '2048x3072' },
+  '3:2':  { '1K': '1536x1024', '2K': '1536x1024', '4K': '1536x1024' },
+  '2:3':  { '1K': '1024x1536', '2K': '1024x1536', '4K': '1024x1536' },
 }
 
 const OPENAI_QUALITY: Record<string, 'low' | 'medium' | 'high' | 'auto'> = {

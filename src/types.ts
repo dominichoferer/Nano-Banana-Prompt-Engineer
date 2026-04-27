@@ -52,7 +52,8 @@ export interface GenModelDef {
 }
 
 export const GEMINI_RATIOS = ['auto', '1:1', '16:9', '9:16', '4:3', '3:4', '4:5', '5:4']
-export const OPENAI_RATIOS = ['1:1', '16:9', '9:16', '4:5', '5:4', '3:2', '2:3']
+// Restricted to OpenAI's "popular sizes" — non-popular ratios silently fall back to 1:1.
+export const OPENAI_RATIOS = ['1:1', '16:9', '9:16', '3:2', '2:3']
 
 export type OpenAIFormat = 'auto' | 'png' | 'jpeg' | 'webp'
 export const OPENAI_FORMATS: OpenAIFormat[] = ['auto', 'png', 'jpeg', 'webp']
