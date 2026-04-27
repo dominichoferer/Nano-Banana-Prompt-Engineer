@@ -599,7 +599,7 @@ function JobPanel({
             </div>
             {selectedModel === 'openai' && (
               <p className="text-[11px] font-sans text-ink-400 mt-0.5">
-                OpenAI gpt-image-2: 1:1, 16:9, 9:16, 3:2, 2:3 — natives 4K nur bei 16:9 und 9:16. Bei 3:2/2:3 bleibt die Auflösung bei 1536×1024 / 1024×1536; "Auflösung" steuert dort nur die Quality-Stufe.
+                OpenAI gpt-image-2: Auto, 1:1, 16:9, 9:16, 3:2, 2:3 — natives 4K nur bei 16:9 und 9:16. Bei 3:2/2:3 bleibt die Auflösung bei 1536×1024 / 1024×1536; "Auflösung" steuert dort nur die Quality-Stufe.
               </p>
             )}
           </div>

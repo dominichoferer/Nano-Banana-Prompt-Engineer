@@ -63,6 +63,8 @@ const OPENAI_QUALITY: Record<string, 'low' | 'medium' | 'high' | 'auto'> = {
 }
 
 function openaiSize(ratio?: string, resolution?: string): string {
+  // "auto" ratio → let OpenAI pick the size entirely.
+  if (ratio === 'auto') return 'auto'
   const r = ratio && OPENAI_SIZES[ratio] ? ratio : '1:1'
   // Even when resolution is "auto", we MUST send a concrete size for non-square
   // ratios — otherwise OpenAI ignores the ratio and defaults to 1024x1024.
