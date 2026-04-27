@@ -2,8 +2,8 @@ import { useState, useCallback, useRef } from 'react'
 import * as pdfjsLib from 'pdfjs-dist'
 import PromptDisplay from './components/PromptDisplay'
 import GeneratedImage from './components/GeneratedImage'
-import type { UploadedImage, AnalysisStatus, GenerationStatus, PromptMode, FocusArea, MockupType, GenModel } from './types'
-import { CHANGE_AREAS, MOCKUP_TYPES, GEN_MODELS, ratiosForModel } from './types'
+import type { UploadedImage, AnalysisStatus, GenerationStatus, PromptMode, FocusArea, MockupType, GenModel, OpenAIFormat } from './types'
+import { CHANGE_AREAS, MOCKUP_TYPES, GEN_MODELS, OPENAI_FORMATS, ratiosForModel } from './types'
 
 pdfjsLib.GlobalWorkerOptions.workerSrc = `https://unpkg.com/pdfjs-dist@${pdfjsLib.version}/build/pdf.worker.min.mjs`
 
@@ -244,6 +244,7 @@ function JobPanel({
   const [selectedModel, setSelectedModel] = useState<GenModel>('pro')
   const [selectedResolution, setSelectedResolution] = useState<'1K' | '2K' | '4K' | 'auto'>('2K')
   const [selectedAspectRatio, setSelectedAspectRatio] = useState('1:1')
+  const [selectedOutputFormat, setSelectedOutputFormat] = useState<OpenAIFormat>('png')
 
   const availableRatios = ratiosForModel(selectedModel)
   const availableResolutions: Array<'auto' | '1K' | '2K' | '4K'> =
@@ -348,6 +349,7 @@ function JobPanel({
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           prompt: prompt.trim(), model: selectedModel, resolution: selectedResolution, aspectRatio: selectedAspectRatio,
+          outputFormat: selectedModel === 'openai' ? selectedOutputFormat : undefined,
           referenceImages: referenceImages.length > 0 ? referenceImages : undefined,
         }),
       })
@@ -361,7 +363,7 @@ function JobPanel({
       setGenerationError(err instanceof Error ? err.message : 'Generierung fehlgeschlagen')
       setGenerationStatus('error')
     }
-  }, [prompt, selectedModel, selectedResolution, selectedAspectRatio, images])
+  }, [prompt, selectedModel, selectedResolution, selectedAspectRatio, selectedOutputFormat, images])
 
   const canAnalyze = (images.length > 0 || promptMode === 'generation') && analysisStatus !== 'analyzing'
   const canGenerate = prompt.trim().length > 0 && generationStatus !== 'generating'
@@ -597,10 +599,23 @@ function JobPanel({
             </div>
             {selectedModel === 'openai' && (
               <p className="text-[11px] font-sans text-ink-400 mt-0.5">
-                OpenAI gpt-image-2 unterstützt nur 1:1, 16:9 und 9:16.
+                OpenAI gpt-image-2: 1:1, 16:9, 9:16, 4:5, 5:4, 3:2, 2:3.
               </p>
             )}
           </div>
+          {selectedModel === 'openai' && (
+            <div className="flex flex-col gap-1.5">
+              <span className="label-section">Output-Format</span>
+              <div className="bg-cream-100 rounded-xl p-1 flex gap-1">
+                {OPENAI_FORMATS.map((f) => (
+                  <button key={f} onClick={() => setSelectedOutputFormat(f)}
+                    className={`mode-btn text-xs py-2 ${selectedOutputFormat === f ? 'mode-btn-active' : 'mode-btn-inactive'}`}>
+                    {f.toUpperCase()}
+                  </button>
+                ))}
+              </div>
+            </div>
+          )}
           <button onClick={handleGenerate} disabled={!canGenerate} className="btn-primary w-full py-4 text-base">
             {generationStatus === 'generating' ? (
               <>
@@ -641,6 +656,7 @@ export default function App() {
   const [quickModel, setQuickModel] = useState<GenModel>('pro')
   const [quickResolution, setQuickResolution] = useState<'1K' | '2K' | '4K' | 'auto'>('2K')
   const [quickAspectRatio, setQuickAspectRatio] = useState('1:1')
+  const [quickOutputFormat, setQuickOutputFormat] = useState<OpenAIFormat>('png')
 
   const quickRatios = ratiosForModel(quickModel)
   const quickResolutions: Array<'auto' | '1K' | '2K' | '4K'> =
@@ -664,7 +680,10 @@ export default function App() {
       const res = await fetch('/api/generate', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ prompt: quickPrompt.trim(), model: quickModel, resolution: quickResolution, aspectRatio: quickAspectRatio }),
+        body: JSON.stringify({
+          prompt: quickPrompt.trim(), model: quickModel, resolution: quickResolution, aspectRatio: quickAspectRatio,
+          outputFormat: quickModel === 'openai' ? quickOutputFormat : undefined,
+        }),
       })
       if (!res.ok) {
         const err = await res.json().catch(() => ({ error: res.statusText }))
@@ -676,7 +695,7 @@ export default function App() {
       setQuickError(err instanceof Error ? err.message : 'Fehler')
       setQuickStatus('error')
     }
-  }, [quickPrompt, quickModel, quickResolution, quickAspectRatio])
+  }, [quickPrompt, quickModel, quickResolution, quickAspectRatio, quickOutputFormat])
 
   return (
     <div className="min-h-dvh flex flex-col bg-cream-50">
@@ -790,6 +809,19 @@ export default function App() {
                 </div>
               </div>
             </div>
+            {quickModel === 'openai' && (
+              <div className="flex flex-col gap-1">
+                <span className="label-section text-[10px]">Output-Format</span>
+                <div className="bg-cream-100 rounded-xl p-0.5 flex gap-0.5">
+                  {OPENAI_FORMATS.map((f) => (
+                    <button key={f} onClick={() => setQuickOutputFormat(f)}
+                      className={`mode-btn text-xs py-1.5 ${quickOutputFormat === f ? 'mode-btn-active' : 'mode-btn-inactive'}`}>
+                      {f.toUpperCase()}
+                    </button>
+                  ))}
+                </div>
+              </div>
+            )}
             {quickStatus === 'error' && quickError && (
               <div className="bg-red-50 border border-red-200 rounded-xl p-3 text-red-600 text-xs animate-scale-in">{quickError}</div>
             )}
