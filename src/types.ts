@@ -54,8 +54,8 @@ export interface GenModelDef {
 export const GEMINI_RATIOS = ['auto', '1:1', '16:9', '9:16', '4:3', '3:4', '4:5', '5:4']
 export const OPENAI_RATIOS = ['1:1', '16:9', '9:16', '4:5', '5:4', '3:2', '2:3']
 
-export type OpenAIFormat = 'png' | 'jpeg' | 'webp'
-export const OPENAI_FORMATS: OpenAIFormat[] = ['png', 'jpeg', 'webp']
+export type OpenAIFormat = 'auto' | 'png' | 'jpeg' | 'webp'
+export const OPENAI_FORMATS: OpenAIFormat[] = ['auto', 'png', 'jpeg', 'webp']
 
 export const GEN_MODELS: GenModelDef[] = [
   { id: 'pro',    icon: '✦',  label: 'Nano Banana Pro', hint: 'Gemini',    ratios: GEMINI_RATIOS },

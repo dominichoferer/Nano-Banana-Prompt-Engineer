@@ -13,7 +13,7 @@ interface OpenAIImageResponse {
 }
 
 type GenModel = 'pro' | 'openai'
-type OpenAIFormat = 'png' | 'jpeg' | 'webp'
+type OpenAIFormat = 'auto' | 'png' | 'jpeg' | 'webp'
 
 interface GenerateBody {
   prompt: string
@@ -64,8 +64,12 @@ const OPENAI_QUALITY: Record<string, 'low' | 'medium' | 'high' | 'auto'> = {
 }
 
 function openaiSize(ratio?: string, resolution?: string): string {
-  if (resolution === 'auto') return 'auto'
   const r = ratio && OPENAI_SIZES[ratio] ? ratio : '1:1'
+  // Even when resolution is "auto", we MUST send a concrete size for non-square
+  // ratios — otherwise OpenAI ignores the ratio and defaults to 1024x1024.
+  if (resolution === 'auto') {
+    return r === '1:1' ? 'auto' : OPENAI_SIZES[r]['2K']
+  }
   const t = resolution && OPENAI_SIZES[r][resolution] ? resolution : '2K'
   return OPENAI_SIZES[r][t]
 }
@@ -83,8 +87,12 @@ async function callOpenAI(
   const quality = OPENAI_QUALITY[body.resolution ?? '2K'] ?? 'medium'
   const prompt = body.prompt.trim()
   const hasRefs = (body.referenceImages?.length ?? 0) > 0
-  const outputFormat: OpenAIFormat = body.outputFormat ?? 'png'
-  const responseMime = outputFormat === 'jpeg' ? 'image/jpeg' : `image/${outputFormat}`
+  const outputFormat: OpenAIFormat = body.outputFormat ?? 'auto'
+  // Default OpenAI returns png; jpeg/webp only when explicitly requested.
+  const responseMime =
+    outputFormat === 'jpeg' ? 'image/jpeg'
+    : outputFormat === 'webp' ? 'image/webp'
+    : 'image/png'
 
   const headers = { Authorization: `Bearer ${apiKey}` }
 
@@ -97,7 +105,7 @@ async function callOpenAI(
     form.append('prompt', prompt)
     form.append('size', size)
     form.append('quality', quality)
-    form.append('output_format', outputFormat)
+    if (outputFormat !== 'auto') form.append('output_format', outputFormat)
     form.append('n', '1')
 
     for (const [i, ref] of (body.referenceImages ?? []).entries()) {
@@ -123,7 +131,7 @@ async function callOpenAI(
         prompt,
         size,
         quality,
-        output_format: outputFormat,
+        ...(outputFormat !== 'auto' ? { output_format: outputFormat } : {}),
         n: 1,
       }),
       signal,

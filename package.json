@@ -1,7 +1,7 @@
 {
-  "name": "nano-banana-prompt-engineer",
+  "name": "heron-ai-studio",
   "version": "1.0.0",
-  "description": "AI-powered image prompt engineer using Claude Vision + Google Imagen",
+  "description": "Heron AI Studio – prompt engineering & image generation (Claude Vision + Gemini + OpenAI)",
   "type": "module",
   "scripts": {
     "dev": "concurrently \"npm run dev:server\" \"npm run dev:client\"",

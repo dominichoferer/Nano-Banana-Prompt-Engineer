@@ -244,7 +244,7 @@ function JobPanel({
   const [selectedModel, setSelectedModel] = useState<GenModel>('pro')
   const [selectedResolution, setSelectedResolution] = useState<'1K' | '2K' | '4K' | 'auto'>('2K')
   const [selectedAspectRatio, setSelectedAspectRatio] = useState('1:1')
-  const [selectedOutputFormat, setSelectedOutputFormat] = useState<OpenAIFormat>('png')
+  const [selectedOutputFormat, setSelectedOutputFormat] = useState<OpenAIFormat>('auto')
 
   const availableRatios = ratiosForModel(selectedModel)
   const availableResolutions: Array<'auto' | '1K' | '2K' | '4K'> =
@@ -610,7 +610,7 @@ function JobPanel({
                 {OPENAI_FORMATS.map((f) => (
                   <button key={f} onClick={() => setSelectedOutputFormat(f)}
                     className={`mode-btn text-xs py-2 ${selectedOutputFormat === f ? 'mode-btn-active' : 'mode-btn-inactive'}`}>
-                    {f.toUpperCase()}
+                    {f === 'auto' ? 'Auto' : f.toUpperCase()}
                   </button>
                 ))}
               </div>
@@ -656,7 +656,7 @@ export default function App() {
   const [quickModel, setQuickModel] = useState<GenModel>('pro')
   const [quickResolution, setQuickResolution] = useState<'1K' | '2K' | '4K' | 'auto'>('2K')
   const [quickAspectRatio, setQuickAspectRatio] = useState('1:1')
-  const [quickOutputFormat, setQuickOutputFormat] = useState<OpenAIFormat>('png')
+  const [quickOutputFormat, setQuickOutputFormat] = useState<OpenAIFormat>('auto')
 
   const quickRatios = ratiosForModel(quickModel)
   const quickResolutions: Array<'auto' | '1K' | '2K' | '4K'> =
@@ -704,12 +704,12 @@ export default function App() {
       <header className="sticky top-0 z-50 bg-white/80 backdrop-blur-md border-b border-cream-200">
         <div className="max-w-4xl mx-auto px-5 py-4 flex items-center justify-between">
           <div className="flex items-center gap-3">
-            <div className="w-9 h-9 rounded-xl bg-banana-gradient flex items-center justify-center shadow-banana text-lg">
-              🍌
+            <div className="w-9 h-9 rounded-xl bg-banana-gradient flex items-center justify-center shadow-banana text-lg text-white">
+              ✦
             </div>
             <div>
               <h1 className="font-display font-bold text-ink-900 text-base leading-none tracking-tight">
-                Nano Banana
+                Heron
                 <span className="text-banana-500 ml-1.5">AI Studio</span>
               </h1>
               <p className="text-ink-400 text-[11px] font-sans mt-0.5">Prompt · Retusche · Bildgenerierung</p>
@@ -738,7 +738,7 @@ export default function App() {
             <span className="text-banana-500">Bilder generieren.</span>
           </h2>
           <p className="text-ink-400 font-sans text-base mt-4 max-w-lg mx-auto leading-relaxed">
-            Referenzbilder hochladen · Lock-Regeln setzen · Claude generiert den Prompt · Gemini rendert das Bild.
+            Referenzbilder hochladen · Lock-Regeln setzen · Claude generiert den Prompt · Gemini oder OpenAI rendert das Bild.
           </p>
         </div>
       </div>
@@ -816,7 +816,7 @@ export default function App() {
                   {OPENAI_FORMATS.map((f) => (
                     <button key={f} onClick={() => setQuickOutputFormat(f)}
                       className={`mode-btn text-xs py-1.5 ${quickOutputFormat === f ? 'mode-btn-active' : 'mode-btn-inactive'}`}>
-                      {f.toUpperCase()}
+                      {f === 'auto' ? 'Auto' : f.toUpperCase()}
                     </button>
                   ))}
                 </div>
@@ -869,8 +869,8 @@ export default function App() {
       {/* ── Footer ────────────────────────────────────────────────────────── */}
       <footer className="border-t border-cream-200 bg-white mt-auto">
         <div className="max-w-4xl mx-auto px-5 py-4 flex items-center justify-between">
-          <p className="text-ink-300 text-xs font-sans">🍌 Nano Banana AI Studio</p>
-          <p className="text-ink-300 text-xs font-sans">Claude Sonnet Vision · Nano Banana Pro · OpenAI gpt-image-2</p>
+          <p className="text-ink-300 text-xs font-sans">Heron AI Studio</p>
+          <p className="text-ink-300 text-xs font-sans">Claude Sonnet Vision · Gemini 3 Pro · OpenAI gpt-image-2</p>
         </div>
       </footer>
     </div>
