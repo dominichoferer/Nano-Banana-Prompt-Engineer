@@ -88,6 +88,7 @@ async function callOpenAI(
   const prompt = body.prompt.trim()
   const hasRefs = (body.referenceImages?.length ?? 0) > 0
   const outputFormat: OpenAIFormat = body.outputFormat ?? 'auto'
+  console.log(`[openai] ratio=${body.aspectRatio} resolution=${body.resolution} → size=${size} quality=${quality} format=${outputFormat} hasRefs=${hasRefs}`)
   // Default OpenAI returns png; jpeg/webp only when explicitly requested.
   const responseMime =
     outputFormat === 'jpeg' ? 'image/jpeg'
