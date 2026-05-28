@@ -1,4 +1,4 @@
-import { useState, useCallback, useRef } from 'react'
+import { useState, useCallback, useEffect, useRef } from 'react'
 import * as pdfjsLib from 'pdfjs-dist'
 import PromptDisplay from './components/PromptDisplay'
 import GeneratedImage from './components/GeneratedImage'
@@ -648,8 +648,135 @@ function JobPanel({
   )
 }
 
+// ── Login Screen ──────────────────────────────────────────────────────────────
+function LoginScreen({ onLogin }: { onLogin: (email: string) => void }) {
+  const [email, setEmail] = useState('')
+  const [password, setPassword] = useState('')
+  const [loading, setLoading] = useState(false)
+  const [error, setError] = useState<string | null>(null)
+
+  const submit = async (e: React.FormEvent) => {
+    e.preventDefault()
+    if (!email.trim() || !password) return
+    setLoading(true); setError(null)
+    try {
+      const res = await fetch('/api/auth/login', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        credentials: 'same-origin',
+        body: JSON.stringify({ email: email.trim(), password }),
+      })
+      if (!res.ok) {
+        const data = await res.json().catch(() => ({ error: 'Anmeldung fehlgeschlagen' }))
+        throw new Error(data.error || 'Anmeldung fehlgeschlagen')
+      }
+      const data = await res.json()
+      onLogin(data.email)
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Anmeldung fehlgeschlagen')
+      setLoading(false)
+    }
+  }
+
+  return (
+    <div className="min-h-dvh flex items-center justify-center bg-cream-50 relative overflow-hidden px-5">
+      <div className="aurora-blob w-[500px] h-[500px] bg-banana-200/60 animate-aurora-1" style={{ top: '-200px', left: '-100px', opacity: 0.7 }} />
+      <div className="aurora-blob w-[400px] h-[400px] bg-amber-100/80 animate-aurora-2" style={{ top: '-100px', right: '-80px', opacity: 0.6 }} />
+      <div className="aurora-blob w-[300px] h-[300px] bg-orange-100/60 animate-aurora-3" style={{ bottom: '-100px', left: '40%', opacity: 0.5 }} />
+
+      <form onSubmit={submit} className="relative z-10 card p-8 w-full max-w-sm flex flex-col gap-5 animate-scale-in">
+        <div className="flex flex-col items-center gap-3">
+          <div className="w-12 h-12 rounded-2xl bg-banana-gradient flex items-center justify-center shadow-banana text-xl text-white">
+            ✦
+          </div>
+          <div className="text-center">
+            <h1 className="font-display font-bold text-ink-900 text-xl tracking-tight">
+              Heron <span className="text-banana-500">AI Studio</span>
+            </h1>
+            <p className="text-ink-400 text-xs font-sans mt-1">Bitte anmelden, um fortzufahren</p>
+          </div>
+        </div>
+
+        <div className="flex flex-col gap-3">
+          <div className="flex flex-col gap-1.5">
+            <label className="label-section">E-Mail</label>
+            <input type="email" autoComplete="username" value={email} onChange={(e) => setEmail(e.target.value)}
+              disabled={loading} required placeholder="name@heron.at" className="input-field text-sm" />
+          </div>
+          <div className="flex flex-col gap-1.5">
+            <label className="label-section">Passwort</label>
+            <input type="password" autoComplete="current-password" value={password} onChange={(e) => setPassword(e.target.value)}
+              disabled={loading} required placeholder="••••••••" className="input-field text-sm" />
+          </div>
+        </div>
+
+        {error && (
+          <div className="bg-red-50 border border-red-200 rounded-xl px-4 py-3 animate-scale-in">
+            <p className="text-red-600 text-xs font-sans">{error}</p>
+          </div>
+        )}
+
+        <button type="submit" disabled={loading || !email.trim() || !password}
+          className="btn-primary w-full py-3 text-sm">
+          {loading ? (
+            <>
+              <svg className="w-4 h-4 animate-spin" fill="none" viewBox="0 0 24 24">
+                <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
+                <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z" />
+              </svg>
+              Wird angemeldet…
+            </>
+          ) : 'Anmelden'}
+        </button>
+      </form>
+    </div>
+  )
+}
+
 // ── Main App ──────────────────────────────────────────────────────────────────
 export default function App() {
+  const [authChecked, setAuthChecked] = useState(false)
+  const [authEnabled, setAuthEnabled] = useState(false)
+  const [userEmail, setUserEmail] = useState<string | null>(null)
+
+  useEffect(() => {
+    let cancelled = false
+    fetch('/api/auth/me', { credentials: 'same-origin' })
+      .then(async (r) => {
+        const data = await r.json().catch(() => ({}))
+        if (cancelled) return
+        setAuthEnabled(!!data.authEnabled)
+        setUserEmail(data.email ?? null)
+        setAuthChecked(true)
+      })
+      .catch(() => { if (!cancelled) setAuthChecked(true) })
+    return () => { cancelled = true }
+  }, [])
+
+  const handleLogout = useCallback(async () => {
+    await fetch('/api/auth/logout', { method: 'POST', credentials: 'same-origin' }).catch(() => {})
+    setUserEmail(null)
+  }, [])
+
+  if (!authChecked) {
+    return (
+      <div className="min-h-dvh flex items-center justify-center bg-cream-50">
+        <svg className="w-6 h-6 animate-spin text-banana-500" fill="none" viewBox="0 0 24 24">
+          <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
+          <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z" />
+        </svg>
+      </div>
+    )
+  }
+
+  if (authEnabled && !userEmail) {
+    return <LoginScreen onLogin={setUserEmail} />
+  }
+
+  return <AppMain userEmail={userEmail} authEnabled={authEnabled} onLogout={handleLogout} />
+}
+
+function AppMain({ userEmail, authEnabled, onLogout }: { userEmail: string | null; authEnabled: boolean; onLogout: () => void }) {
   const [jobs, setJobs] = useState<number[]>([Date.now()])
   const [quickOpen, setQuickOpen] = useState(false)
   const [quickPrompt, setQuickPrompt] = useState('')
@@ -715,13 +842,24 @@ export default function App() {
               <p className="text-ink-400 text-[11px] font-sans mt-0.5">Prompt · Retusche · Bildgenerierung</p>
             </div>
           </div>
-          <button onClick={() => setQuickOpen((o) => !o)}
-            className={`flex items-center gap-1.5 px-3 py-1.5 rounded-full border text-xs font-sans font-medium transition-all duration-150 ${quickOpen ? 'bg-banana-500 text-white border-banana-500 shadow-banana' : 'bg-white text-ink-500 border-cream-200 hover:border-banana-300 hover:text-banana-600 shadow-card'}`}>
-            <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 10V3L4 14h7v7l9-11h-7z" />
-            </svg>
-            Quick Generate
-          </button>
+          <div className="flex items-center gap-2">
+            <button onClick={() => setQuickOpen((o) => !o)}
+              className={`flex items-center gap-1.5 px-3 py-1.5 rounded-full border text-xs font-sans font-medium transition-all duration-150 ${quickOpen ? 'bg-banana-500 text-white border-banana-500 shadow-banana' : 'bg-white text-ink-500 border-cream-200 hover:border-banana-300 hover:text-banana-600 shadow-card'}`}>
+              <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 10V3L4 14h7v7l9-11h-7z" />
+              </svg>
+              Quick Generate
+            </button>
+            {authEnabled && userEmail && (
+              <button onClick={onLogout} title={`Abmelden (${userEmail})`}
+                className="flex items-center gap-1.5 px-3 py-1.5 rounded-full border bg-white text-ink-400 border-cream-200 hover:border-red-300 hover:text-red-500 shadow-card text-xs font-sans font-medium transition-all duration-150">
+                <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M17 16l4-4m0 0l-4-4m4 4H7m6 4v1a3 3 0 01-3 3H6a3 3 0 01-3-3V7a3 3 0 013-3h4a3 3 0 013 3v1" />
+                </svg>
+                <span className="hidden sm:inline">{userEmail.split('@')[0]}</span>
+              </button>
+            )}
+          </div>
         </div>
       </header>
 

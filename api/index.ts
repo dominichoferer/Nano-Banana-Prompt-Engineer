@@ -3,6 +3,7 @@ import cors from 'cors'
 import multer from 'multer'
 import Anthropic from '@anthropic-ai/sdk'
 import type { Request, Response } from 'express'
+import { mountAuthRoutes, requireAuth } from '../server/auth.js'
 
 const app = express()
 
@@ -19,6 +20,9 @@ const upload = multer({
 
 app.use(cors())
 app.use(express.json({ limit: '100mb' }))
+
+// Auth endpoints (login/logout/me) — no-op if AUTH_USERS env not set
+mountAuthRoutes(app)
 
 // ── System Prompt ───────────────────────────────────────────────────────────
 
@@ -266,7 +270,7 @@ Start directly with the header line — no preamble.`
 
 // ── Analyze endpoint ────────────────────────────────────────────────────────
 
-app.post('/api/analyze', upload.array('images', 10), async (req: Request, res: Response) => {
+app.post('/api/analyze', requireAuth, upload.array('images', 10), async (req: Request, res: Response) => {
   try {
     const files = req.files as Express.Multer.File[]
     const userDescription = req.body?.userDescription as string | undefined
@@ -515,7 +519,7 @@ async function callGemini(
   }
 }
 
-app.post('/api/generate', async (req: Request, res: Response) => {
+app.post('/api/generate', requireAuth, async (req: Request, res: Response) => {
   try {
     const body = req.body as GenerateBody
     if (!body.prompt?.trim()) return res.status(400).json({ error: 'Prompt is required' })

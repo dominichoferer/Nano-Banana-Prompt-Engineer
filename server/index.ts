@@ -6,6 +6,7 @@ import path from 'path'
 import { fileURLToPath } from 'url'
 import { analyzeImages } from './analyze.js'
 import { generateImage } from './generate.js'
+import { mountAuthRoutes, requireAuth, isAuthEnabled } from './auth.js'
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url))
 
@@ -31,9 +32,12 @@ const upload = multer({
 app.use(cors())
 app.use(express.json({ limit: '100mb' }))
 
-// API Routes
-app.post('/api/analyze', upload.array('images', 10), analyzeImages)
-app.post('/api/generate', generateImage)
+// Auth routes (login/logout/me) — always mounted; no-op if AUTH_USERS not set
+mountAuthRoutes(app)
+
+// API Routes (protected by requireAuth — pass-through if auth disabled)
+app.post('/api/analyze', requireAuth, upload.array('images', 10), analyzeImages)
+app.post('/api/generate', requireAuth, generateImage)
 
 // Serve React build in production
 const clientBuildPath = path.join(__dirname, '../client')
@@ -53,4 +57,5 @@ app.listen(PORT, () => {
   if (!process.env.GOOGLE_AI_API_KEY) {
     console.warn('   ⚠️  GOOGLE_AI_API_KEY not set — image generation will fail')
   }
+  console.log(`   🔐 Auth: ${isAuthEnabled() ? 'enabled' : 'disabled (no AUTH_USERS/AUTH_SECRET)'}`)
 })
