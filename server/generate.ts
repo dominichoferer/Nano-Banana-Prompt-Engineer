@@ -43,16 +43,22 @@ const QUALITY_HINT: Record<string, string> = {
 
 // ── OpenAI config ───────────────────────────────────────────────────────────
 
-// Official OpenAI sizes from the gpt-image-2 docs.
-// No native 4K square — fall back to 2K for 1:1 4K.
-// Only OpenAI's "popular sizes" — anything else silently falls back to 1024x1024.
-// 3:2 / 2:3 only have a 1K popular size, so 2K/4K reuse it (tier just bumps quality).
-const OPENAI_SIZES: Record<string, Record<string, string>> = {
-  '1:1':  { '1K': '1024x1024', '2K': '2048x2048', '4K': '2048x2048' },
-  '16:9': { '1K': '2048x1152', '2K': '2048x1152', '4K': '3840x2160' },
-  '9:16': { '1K': '1152x2048', '2K': '1152x2048', '4K': '2160x3840' },
-  '3:2':  { '1K': '1536x1024', '2K': '1536x1024', '4K': '1536x1024' },
-  '2:3':  { '1K': '1024x1536', '2K': '1024x1536', '4K': '1024x1536' },
+// gpt-image-2 accepts arbitrary sizes that satisfy:
+//   • both edges divisible by 16
+//   • max edge ≤ 3840
+//   • total pixels 655,360–8,294,400
+//   • long:short ratio ≤ 3:1
+// We pick the largest mult-of-16 size that hits each tier for the chosen ratio.
+const OPENAI_SIZES: Record<string, Record<'1K' | '2K' | '4K', string>> = {
+  '1:1':  { '1K': '1024x1024', '2K': '2048x2048', '4K': '2880x2880' }, // 8.29MP
+  '16:9': { '1K': '1280x720',  '2K': '2048x1152', '4K': '3840x2160' }, // 8.29MP
+  '9:16': { '1K': '720x1280',  '2K': '1152x2048', '4K': '2160x3840' },
+  '4:3':  { '1K': '1024x768',  '2K': '2048x1536', '4K': '2880x2160' }, // 6.22MP
+  '3:4':  { '1K': '768x1024',  '2K': '1536x2048', '4K': '2160x2880' },
+  '3:2':  { '1K': '1536x1024', '2K': '2304x1536', '4K': '3072x2048' }, // 6.29MP
+  '2:3':  { '1K': '1024x1536', '2K': '1536x2304', '4K': '2048x3072' },
+  '4:5':  { '1K': '1024x1280', '2K': '1536x1920', '4K': '2304x2880' }, // 6.63MP
+  '5:4':  { '1K': '1280x1024', '2K': '1920x1536', '4K': '2880x2304' },
 }
 
 const OPENAI_QUALITY: Record<string, 'low' | 'medium' | 'high' | 'auto'> = {
@@ -63,16 +69,14 @@ const OPENAI_QUALITY: Record<string, 'low' | 'medium' | 'high' | 'auto'> = {
 }
 
 function openaiSize(ratio?: string, resolution?: string): string {
-  // "auto" ratio → let OpenAI pick the size entirely.
-  if (ratio === 'auto') return 'auto'
-  const r = ratio && OPENAI_SIZES[ratio] ? ratio : '1:1'
-  // Even when resolution is "auto", we MUST send a concrete size for non-square
-  // ratios — otherwise OpenAI ignores the ratio and defaults to 1024x1024.
-  if (resolution === 'auto') {
-    return r === '1:1' ? 'auto' : OPENAI_SIZES[r]['2K']
-  }
-  const t = resolution && OPENAI_SIZES[r][resolution] ? resolution : '2K'
-  return OPENAI_SIZES[r][t]
+  // "auto" ratio + "auto" resolution → let OpenAI pick everything.
+  if (ratio === 'auto' && (resolution === 'auto' || !resolution)) return 'auto'
+  // "auto" ratio with specific resolution → default to 1:1 at that tier.
+  const r = (!ratio || ratio === 'auto') ? '1:1'
+    : (OPENAI_SIZES[ratio] ? ratio : '1:1')
+  const tier: '1K' | '2K' | '4K' =
+    resolution === '1K' || resolution === '2K' || resolution === '4K' ? resolution : '2K'
+  return OPENAI_SIZES[r][tier]
 }
 
 // ── OpenAI caller ───────────────────────────────────────────────────────────
@@ -90,11 +94,6 @@ async function callOpenAI(
   const hasRefs = (body.referenceImages?.length ?? 0) > 0
   const outputFormat: OpenAIFormat = body.outputFormat ?? 'auto'
   console.log(`[openai] ratio=${body.aspectRatio} resolution=${body.resolution} → size=${size} quality=${quality} format=${outputFormat} hasRefs=${hasRefs}`)
-  // Default OpenAI returns png; jpeg/webp only when explicitly requested.
-  const responseMime =
-    outputFormat === 'jpeg' ? 'image/jpeg'
-    : outputFormat === 'webp' ? 'image/webp'
-    : 'image/png'
 
   const headers = { Authorization: `Bearer ${apiKey}` }
 
@@ -146,9 +145,22 @@ async function callOpenAI(
   }
 
   const first = data.data?.[0]
-  if (first?.b64_json) return { image: `data:${responseMime};base64,${first.b64_json}`, prompt }
+  if (first?.b64_json) {
+    // Detect actual MIME from magic bytes — OpenAI sometimes ignores output_format
+    // (notably webp silently falls back to png), so trust the bytes, not the request.
+    const mime = detectMime(first.b64_json)
+    return { image: `data:${mime};base64,${first.b64_json}`, prompt }
+  }
   if (first?.url) return { image: first.url, prompt }
   throw new Error('No image returned from OpenAI')
+}
+
+function detectMime(b64: string): string {
+  const head = Buffer.from(b64.slice(0, 24), 'base64').subarray(0, 12)
+  if (head[0] === 0x89 && head[1] === 0x50 && head[2] === 0x4e && head[3] === 0x47) return 'image/png'
+  if (head[0] === 0xff && head[1] === 0xd8 && head[2] === 0xff) return 'image/jpeg'
+  if (head[0] === 0x52 && head[1] === 0x49 && head[2] === 0x46 && head[3] === 0x46 && head[8] === 0x57 && head[9] === 0x45 && head[10] === 0x42 && head[11] === 0x50) return 'image/webp'
+  return 'image/png'
 }
 
 // ── Gemini caller ───────────────────────────────────────────────────────────

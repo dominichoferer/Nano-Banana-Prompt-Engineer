@@ -381,12 +381,14 @@ interface OpenAIImageResponse {
 }
 
 type GenModel = 'pro' | 'openai'
+type OpenAIFormat = 'auto' | 'png' | 'jpeg' | 'webp'
 
 interface GenerateBody {
   prompt: string
   aspectRatio?: string
   resolution?: string
   model?: GenModel
+  outputFormat?: OpenAIFormat
   referenceImages?: Array<{ mimeType: string; data: string }>
 }
 
@@ -405,11 +407,17 @@ const QUALITY_HINT: Record<string, string> = {
   '4K': 'ultra HD, 4K resolution, hyper-detailed, maximum sharpness, professional quality, ultra sharp edges, rich textures',
 }
 
-// Official OpenAI sizes from the gpt-image-2 docs.
-const OPENAI_SIZES: Record<string, Record<string, string>> = {
-  '1:1':  { '1K': '1024x1024', '2K': '2048x2048', '4K': '2048x2048' },
-  '16:9': { '1K': '2048x1152', '2K': '2048x1152', '4K': '3840x2160' },
-  '9:16': { '1K': '1152x2048', '2K': '1152x2048', '4K': '2160x3840' },
+// gpt-image-2 sizes — both edges divisible by 16, max edge ≤3840, ≤8.3MP total.
+const OPENAI_SIZES: Record<string, Record<'1K' | '2K' | '4K', string>> = {
+  '1:1':  { '1K': '1024x1024', '2K': '2048x2048', '4K': '2880x2880' },
+  '16:9': { '1K': '1280x720',  '2K': '2048x1152', '4K': '3840x2160' },
+  '9:16': { '1K': '720x1280',  '2K': '1152x2048', '4K': '2160x3840' },
+  '4:3':  { '1K': '1024x768',  '2K': '2048x1536', '4K': '2880x2160' },
+  '3:4':  { '1K': '768x1024',  '2K': '1536x2048', '4K': '2160x2880' },
+  '3:2':  { '1K': '1536x1024', '2K': '2304x1536', '4K': '3072x2048' },
+  '2:3':  { '1K': '1024x1536', '2K': '1536x2304', '4K': '2048x3072' },
+  '4:5':  { '1K': '1024x1280', '2K': '1536x1920', '4K': '2304x2880' },
+  '5:4':  { '1K': '1280x1024', '2K': '1920x1536', '4K': '2880x2304' },
 }
 
 const OPENAI_QUALITY: Record<string, 'low' | 'medium' | 'high' | 'auto'> = {
@@ -417,10 +425,20 @@ const OPENAI_QUALITY: Record<string, 'low' | 'medium' | 'high' | 'auto'> = {
 }
 
 function openaiSize(ratio?: string, resolution?: string): string {
-  if (resolution === 'auto') return 'auto'
-  const r = ratio && OPENAI_SIZES[ratio] ? ratio : '1:1'
-  const t = resolution && OPENAI_SIZES[r][resolution] ? resolution : '2K'
-  return OPENAI_SIZES[r][t]
+  if (ratio === 'auto' && (resolution === 'auto' || !resolution)) return 'auto'
+  const r = (!ratio || ratio === 'auto') ? '1:1'
+    : (OPENAI_SIZES[ratio] ? ratio : '1:1')
+  const tier: '1K' | '2K' | '4K' =
+    resolution === '1K' || resolution === '2K' || resolution === '4K' ? resolution : '2K'
+  return OPENAI_SIZES[r][tier]
+}
+
+function detectMime(b64: string): string {
+  const head = Buffer.from(b64.slice(0, 24), 'base64').subarray(0, 12)
+  if (head[0] === 0x89 && head[1] === 0x50 && head[2] === 0x4e && head[3] === 0x47) return 'image/png'
+  if (head[0] === 0xff && head[1] === 0xd8 && head[2] === 0xff) return 'image/jpeg'
+  if (head[0] === 0x52 && head[1] === 0x49 && head[2] === 0x46 && head[3] === 0x46 && head[8] === 0x57 && head[9] === 0x45 && head[10] === 0x42 && head[11] === 0x50) return 'image/webp'
+  return 'image/png'
 }
 
 async function callOpenAI(
@@ -434,6 +452,9 @@ async function callOpenAI(
   const quality = OPENAI_QUALITY[body.resolution ?? '2K'] ?? 'medium'
   const prompt = body.prompt.trim()
   const hasRefs = (body.referenceImages?.length ?? 0) > 0
+  const outputFormat: OpenAIFormat = body.outputFormat ?? 'auto'
+  console.log(`[openai] ratio=${body.aspectRatio} resolution=${body.resolution} → size=${size} quality=${quality} format=${outputFormat} hasRefs=${hasRefs}`)
+
   const headers = { Authorization: `Bearer ${apiKey}` }
 
   let fetchRes: globalThis.Response
@@ -444,6 +465,7 @@ async function callOpenAI(
     form.append('prompt', prompt)
     form.append('size', size)
     form.append('quality', quality)
+    if (outputFormat !== 'auto') form.append('output_format', outputFormat)
     form.append('n', '1')
     for (const [i, ref] of (body.referenceImages ?? []).entries()) {
       const bytes = Buffer.from(ref.data, 'base64')
@@ -458,7 +480,11 @@ async function callOpenAI(
     fetchRes = await fetch('https://api.openai.com/v1/images/generations', {
       method: 'POST',
       headers: { ...headers, 'Content-Type': 'application/json' },
-      body: JSON.stringify({ model: 'gpt-image-2', prompt, size, quality, n: 1 }),
+      body: JSON.stringify({
+        model: 'gpt-image-2', prompt, size, quality,
+        ...(outputFormat !== 'auto' ? { output_format: outputFormat } : {}),
+        n: 1,
+      }),
       signal,
     })
   }
@@ -467,7 +493,10 @@ async function callOpenAI(
   if (!fetchRes.ok) throw new Error(data.error?.message || `OpenAI error ${fetchRes.status}`)
 
   const first = data.data?.[0]
-  if (first?.b64_json) return { image: `data:image/png;base64,${first.b64_json}`, prompt }
+  if (first?.b64_json) {
+    const mime = detectMime(first.b64_json)
+    return { image: `data:${mime};base64,${first.b64_json}`, prompt }
+  }
   if (first?.url) return { image: first.url, prompt }
   throw new Error('No image returned from OpenAI')
 }

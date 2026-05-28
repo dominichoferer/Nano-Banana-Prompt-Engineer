@@ -52,11 +52,14 @@ export interface GenModelDef {
 }
 
 export const GEMINI_RATIOS = ['auto', '1:1', '16:9', '9:16', '4:3', '3:4', '4:5', '5:4']
-// Restricted to OpenAI's "popular sizes" — non-popular ratios silently fall back to 1:1.
-export const OPENAI_RATIOS = ['auto', '1:1', '16:9', '9:16', '3:2', '2:3']
+// gpt-image-2 supports any size with both edges divisible by 16, max edge ≤3840,
+// total pixels ≤8.3MP, long:short ratio ≤3:1 — so the same ratios as Gemini work,
+// plus the editorial 3:2 / 2:3 photo ratios.
+export const OPENAI_RATIOS = ['auto', '1:1', '16:9', '9:16', '3:2', '2:3', '4:3', '3:4', '4:5', '5:4']
 
-export type OpenAIFormat = 'auto' | 'png' | 'jpeg' | 'webp'
-export const OPENAI_FORMATS: OpenAIFormat[] = ['auto', 'png', 'jpeg', 'webp']
+// WebP requests silently return PNG from the OpenAI API, so we don't advertise it.
+export type OpenAIFormat = 'auto' | 'png' | 'jpeg'
+export const OPENAI_FORMATS: OpenAIFormat[] = ['auto', 'png', 'jpeg']
 
 export const GEN_MODELS: GenModelDef[] = [
   { id: 'pro',    icon: '✦',  label: 'Nano Banana Pro', hint: 'Gemini',    ratios: GEMINI_RATIOS },
