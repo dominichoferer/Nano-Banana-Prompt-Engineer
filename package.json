@@ -10,7 +10,8 @@
     "build": "vite build",
     "start": "node dist/server/index.js",
     "preview": "vite preview",
-    "hash-password": "tsx scripts/hash-password.ts"
+    "hash-password": "tsx scripts/hash-password.ts",
+    "key:anthropic": "node scripts/anthropic-key.mjs"
   },
   "dependencies": {
     "@anthropic-ai/sdk": "^0.39.0",
