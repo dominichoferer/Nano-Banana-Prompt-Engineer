@@ -587,12 +587,20 @@ export async function analyzeImages(req: Request, res: Response) {
       ],
     }
 
-    // Voreinstellung Opus 5; Sonnet 5 ist der Rückfall, wenn Opus überlastet
-    // ist — und über ANALYZE_MODEL auch als Erstwahl setzbar, wenn Tempo vor
-    // allem anderen geht.
+    // Sonnet 5 als Erstwahl, Opus 5 als Rückfall bei Überlastung.
+    //
+    // Die schwierige Stelle dieser Aufgabe ist nicht das Formulieren, sondern
+    // die Rollenzuordnung bei mehreren Bildern — und die steht inzwischen so
+    // ausdrücklich im Auftrag (Nummer und Rolle an jedem Bild, aufgelöste
+    // Bildbezüge, erzwungenes "preserve"), dass sie weniger von der reinen
+    // Modellstärke abhängt. Sonnet 5 ist dafür spürbar schneller und kostet
+    // rund ein Drittel.
+    //
+    // Über ANALYZE_MODEL=claude-opus-5 jederzeit zurückstellbar, falls ein
+    // Auftrag doch mehr Urteilskraft braucht.
     const MODELS = ANALYZE_MODEL
-      ? [ANALYZE_MODEL, 'claude-sonnet-5'].filter((m, i, a) => a.indexOf(m) === i)
-      : ['claude-opus-5', 'claude-sonnet-5']
+      ? [ANALYZE_MODEL, 'claude-opus-5'].filter((m, i, a) => a.indexOf(m) === i)
+      : ['claude-sonnet-5', 'claude-opus-5']
     let lastErr: unknown
 
     for (const model of MODELS) {
