@@ -71,6 +71,9 @@ export default function PromptDisplay({ prompt, onChange, status, images }: Prop
     <div className="flex flex-col gap-4 flex-1 min-h-0">
 
       <div className="relative flex-1">
+        {/* whitespace-pre-wrap statt pre: Mit `pre` bricht im Textfeld nichts
+            um, und eine lange JSON-Zeile lief endlos nach rechts — es sah aus,
+            als stünde der ganze Prompt in einer einzigen Zeile. */}
         <textarea
           ref={textareaRef}
           value={prompt}
@@ -85,7 +88,7 @@ export default function PromptDisplay({ prompt, onChange, status, images }: Prop
             bg-cream-50 border border-cream-200 text-ink-900
             font-mono text-xs leading-relaxed p-4
             focus:outline-none focus:border-heron-400 focus:ring-2 focus:ring-heron-200
-            placeholder:text-ink-300 whitespace-pre shadow-card
+            placeholder:text-ink-300 whitespace-pre-wrap break-words shadow-card
             transition-all duration-200
             ${status === 'analyzing' ? 'typing-cursor' : ''}
           `}

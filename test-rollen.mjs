@@ -43,7 +43,7 @@ pruefe('Klausel trennt WER von WIE SAUBER', klausel.includes('IDENTITY IS NOT FI
 pruefe('Klausel benennt beide Fehlschläge (wächsern UND fleckig)',
   /waxy/.test(klausel) && /blotchy/.test(klausel))
 pruefe('Rollentext des Ausgangsmaterials trennt sie ebenfalls',
-  legende.includes('IDENTITY IS NOT THE SAME AS FILE QUALITY'))
+  /Identity is not file quality/i.test(legende))
 
 console.log('\n— Zusammenbau wie in der App —')
 const volltext = [legende, '{"scene":"portrait"}', klausel].filter(Boolean).join('\n\n')

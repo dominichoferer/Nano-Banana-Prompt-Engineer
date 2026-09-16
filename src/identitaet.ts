@@ -75,45 +75,38 @@ export function identitaetsKlausel(ausgang: number[], ziel: number[]): string {
   if (ausgang.length === 0) return ''
   const quelle = nummern(ausgang)
 
+  // Bewusst knapp. Die ausführliche Begründung steht in der Rollen-Legende
+  // ganz oben; hier zählt nur, dass das Wichtigste NOCH EINMAL ganz am Ende
+  // steht — beim Bildmodell wiegt das zuletzt Gelesene schwerer. Eine zweite
+  // ausführliche Fassung würde den Prompt aufblähen, ohne ihn deutlicher zu
+  // machen.
   const teile = [
     'IDENTITY — THIS SECTION OVERRIDES EVERYTHING ABOVE, INCLUDING THE JSON.',
     `The person in the result is the person in ${quelle}. Reproduce that face exactly: skull and `
-    + 'jaw shape, cheekbones, brow ridge, eye shape, spacing and colour, nose bridge and width, '
-    + 'lip shape and thickness, ear shape and position, hairline, hair texture and fall, beard '
-    + 'pattern, skin tone and complexion, apparent age. Do not beautify it, do not slim it, do '
-    + 'not make it more symmetrical, do not age it up or down.',
+    + 'jaw, cheekbones, brow, eye shape, spacing and colour, nose, lips, ears, hairline, hair, '
+    + 'beard, skin tone, apparent age. Do not beautify, slim, symmetrise or age it.',
   ]
 
   if (ziel.length > 0) {
     teile.push(
-      `${nummern(ziel)} shows a DIFFERENT person. That person is a stand-in: they are there to `
-      + 'show framing, crop, pose, background and lighting, nothing else. Their face, head shape, '
-      + 'hairline, skin tone and build must NOT appear in the result. Do not blend the two faces, '
-      + 'do not average them, and do not produce someone who merely resembles the source. If the '
-      + `result could be mistaken for the person in ${nummern(ziel)}, it is wrong and must be `
-      + 'discarded.',
+      `${nummern(ziel)} shows a DIFFERENT person — a stand-in for framing, pose, background and `
+      + 'light only. Their face, head shape, hairline, skin tone and build must NOT appear, not '
+      + 'blended and not averaged. If the result could be mistaken for them, it is wrong.',
     )
   }
 
   teile.push(
     // Der Fehler des ersten Durchlaufs: „reproduce exactly" plus „reconstruct
-    // sharp detail" liess das Modell die Blockartefakte des 12-KB-JPEGs für
-    // Hautmerkmale halten und gross ausmalen. Identitaet und Dateiqualitaet
-    // muessen getrennt benannt werden, sonst wird das Gesicht fleckig.
-    `IDENTITY IS NOT FILE QUALITY. ${quelle} ${ausgang.length > 1 ? 'are' : 'is'} small and heavily `
-    + 'compressed. Its JPEG blocking, colour noise, banding, posterisation, mottling, blur and '
-    + 'dirt are defects of the FILE. They are NOT features of this person and must NOT be '
-    + 'reproduced: no blotches, no patches, no discoloured or uneven areas, no invented marks, '
-    + 'scars or pigment spots on the face. Skin must come out clean, even and healthy in that '
-    + "person's own tone, with natural fine texture — as if the same person had been photographed "
-    + 'properly in a studio.',
-    `So: take WHO from ${quelle} — geometry, proportions, features, skin tone, hair. Take HOW `
-    + 'CLEAN from a well-exposed studio portrait standard, never from the source file. Reconstruct '
-    + `sharp eyes, lashes and hair at full output resolution along the face in ${quelle}, and `
-    + 'never fill missing detail from another reference. Both a blurred, waxy face and a blotchy, '
-    + 'patchy one are failed results.',
+    // sharp detail" liess das Modell die Blockartefakte des kleinen JPEGs für
+    // Hautmerkmale halten und gross ausmalen.
+    `IDENTITY IS NOT FILE QUALITY. Take WHO from ${quelle} — geometry, proportions, features, `
+    + 'skin tone, hair. Do NOT take its compression artefacts, blocking, noise, banding or blur: '
+    + 'those belong to the file, not the person, and must not show up as blotches or discoloured '
+    + 'skin. Render clean, even skin in that person\'s own tone with natural fine texture, as if '
+    + 'the same person had been photographed properly. A waxy face and a blotchy face are both '
+    + 'failed results.',
     `Test before finishing: someone who knows the person in ${quelle} must recognise them at a `
-    + 'glance, and the skin must look like skin, not like a compressed photograph.',
+    + 'glance, and the skin must look like skin.',
   )
 
   return teile.join('\n')

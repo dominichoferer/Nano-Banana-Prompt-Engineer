@@ -19,40 +19,33 @@ export interface RefBild {
   zeigt: string
 }
 
-/** Wie das Bildmodell mit der jeweiligen Rolle umgehen soll. */
+/**
+ * Wie das Bildmodell mit der jeweiligen Rolle umgehen soll.
+ *
+ * Bewusst knapp gehalten. Diese Texte standen einmal deutlich länger hier —
+ * aus der Zeit, als der Prompt Fliesstext war und die Rolle nirgends sonst
+ * stand. Inzwischen trägt das JSON die Rolle je Bild selbst, und die Identität
+ * steht noch einmal ausführlich in der Klausel am Ende. Dreimal dasselbe macht
+ * einen Prompt nicht deutlicher: Das Modell verteilt seine Aufmerksamkeit auf
+ * die Wiederholungen, und der Auftragstext des Nutzers geht darin unter.
+ */
 export const ROLLEN_REGEL: Record<RefRolle, string> = {
   ausgang:
     'SOURCE MATERIAL — what the result is built FROM, and the only place its content may come '
     + 'from. Reproduce it faithfully: shape, proportions, material, colour, every print, seam and '
-    + 'logo. It must be recognisable as this exact item, not a similar one. '
-    // Ohne diesen Satz wird ein Porträt wie ein Gegenstand gelesen — und das
-    // Gesicht kommt am Ende aus der besser aufgelösten Zielreferenz.
-    + 'IF A PERSON IS SHOWN, THAT PERSON IS THE SUBJECT OF THE RESULT: reproduce the face exactly '
-    + '— facial geometry, jaw and cheekbones, eye shape, spacing and colour, nose, mouth, ear '
-    + 'shape, hairline, hair texture, beard, skin tone and apparent age. Never substitute, '
-    + 'beautify, average or swap that face, and never take it from another image. '
-    // Der Unterschied, der beim ersten Versuch fehlte: WER die Person ist, kommt
-    // aus der Vorlage — WIE SAUBER das Bild ist, nicht. Ein 12-KB-JPEG hat
-    // Blockartefakte und Farbrauschen; ohne diesen Satz hält das Modell sie für
-    // Hautmerkmale und malt sie gross und scharf aus. Das Gesicht wird fleckig.
-    + 'IDENTITY IS NOT THE SAME AS FILE QUALITY. Take from this image only WHO the person is: '
-    + 'facial geometry, proportions, skin tone, hair and features. Do NOT take compression '
-    + 'artefacts, JPEG blocking, colour noise, banding, posterisation, mottling, blur or dirt '
-    + 'from it — those belong to the file, not to the person, and must not appear as blotches, '
-    + 'patches, discoloured areas or texture on the skin. Render clean, even, healthy skin in '
-    + 'that person\'s own tone, with natural fine texture and no invented marks, scars or '
-    + 'pigment patches. If the source is small or soft, upscale it cleanly rather than '
-    + 'reproducing its defects.',
+    + 'logo. It must be this exact item, not a similar one. IF A PERSON IS SHOWN, THAT PERSON IS '
+    + 'THE SUBJECT: reproduce the face exactly and never take it from another image. Identity is '
+    + 'not file quality — take who the person is, never the file\'s compression artefacts, noise '
+    + 'or blur, which must not show up as blotchy skin.',
   ziel:
-    'TARGET REFERENCE — how the result should LOOK, not what it should contain. Take colour grade, '
-    + 'light direction and quality, perspective, camera distance, framing, background and mood from '
-    + 'it. Do NOT copy the objects, garments, people or text shown in it. '
-    + 'ANY PERSON VISIBLE HERE IS A STAND-IN, shown only to demonstrate crop, pose, background and '
-    + 'lighting. That person is NOT the subject: their face, head shape, hairline, skin tone and '
-    + 'build must not appear in the result, not even partially and not blended with anyone else.',
+    'TARGET REFERENCE — how the result should LOOK, not what it should contain. Take colour '
+    + 'grade, light, perspective, camera distance, framing, background and mood. Do NOT copy the '
+    + 'objects, garments, people or text shown in it. ANY PERSON VISIBLE HERE IS A STAND-IN for '
+    + 'crop, pose and lighting — their face and build must not appear in the result, not even '
+    + 'partially.',
   person:
-    'THE PERSON — the real face that must appear. Reproduce facial proportions, skin tone, hairline, '
-    + 'haircut, beard and build exactly. Do not beautify, average or substitute the face.',
+    'THE PERSON — the real face that must appear. Reproduce facial proportions, skin tone, '
+    + 'hairline, haircut, beard and build exactly. Do not beautify, average or substitute it.',
 }
 
 const ROLLEN_FOLGE: RefRolle[] = ['ausgang', 'ziel', 'person']
@@ -121,13 +114,28 @@ export function baueLegende(liste: RefBild[]): string {
     + zeilen.join('\n')
 }
 
+/**
+ * Die Kurzfassung je Rolle für das Manifest.
+ *
+ * Hier stand einmal die vollständige Rollenregel — je Bild noch einmal. Bei
+ * drei Bildern waren das über 3000 Zeichen reine Wiederholung, denn die
+ * ausführliche Fassung steht ohnehin in der Legende direkt darüber. Ein
+ * Prompt, der sich dreimal selbst zitiert, wird nicht deutlicher, sondern
+ * unschärfer: Das Modell verteilt seine Aufmerksamkeit auf die Wiederholungen.
+ */
+const ROLLEN_KURZ: Record<RefRolle, string> = {
+  ausgang: 'Source material: content, objects and identity come from here. Reproduce faithfully.',
+  ziel: 'Target reference: look only — colour, light, perspective, framing. Never its content or its people.',
+  person: 'The person: this face must appear in the result.',
+}
+
 /** Dieselbe Information maschinenlesbar, für den Block `reference_images` im JSON. */
 export function bildManifest(liste: RefBild[]): Array<{ id: string; shows: string; role: string; how_to_use: string }> {
   return liste.map((b, i) => ({
     id: `IMAGE ${i + 1}`,
     shows: b.zeigt,
     role: b.rolle,
-    how_to_use: ROLLEN_REGEL[b.rolle],
+    how_to_use: ROLLEN_KURZ[b.rolle],
   }))
 }
 

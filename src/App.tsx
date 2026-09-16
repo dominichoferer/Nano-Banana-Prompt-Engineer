@@ -6,7 +6,7 @@ import type { UploadedImage, AnalysisStatus, GenerationStatus, PromptMode, Focus
 import { CHANGE_AREAS, MOCKUP_TYPES, GEN_MODELS, GEN_FAMILIEN, OPENAI_FORMATS, ratiosForModel,
   STANDARD_MODELL, istGpt, familieVon, kannTransparenz, modellDef } from './types'
 import type { RefRolle, RefBild } from './referenzen'
-import { ROLLEN_REGEL, baueLegende, begrenze, setzeManifest } from './referenzen'
+import { baueLegende, begrenze, setzeManifest } from './referenzen'
 import { willGesichtLock, identitaetsKlausel } from './identitaet'
 
 pdfjsLib.GlobalWorkerOptions.workerSrc = `https://unpkg.com/pdfjs-dist@${pdfjsLib.version}/build/pdf.worker.min.mjs`
@@ -662,7 +662,6 @@ function JobPanel({
       const imageSettings = geordneteBilder.map((img) => ({
         name: img.name,
         rolle: img.rolle,
-        rollenRegel: ROLLEN_REGEL[img.rolle],
         faceLock: img.faceLock || (gesichtErzwungen && img.rolle === 'ausgang'),
         objectLock: img.objectLock,
         customLock: img.customLock.trim(),
@@ -997,7 +996,7 @@ function JobPanel({
 
         <div className="bg-heron-50 border border-heron-200 rounded-xl px-4 py-3">
           <p className="text-ink-500 text-xs font-sans leading-relaxed">
-            <span className="text-heron-700 font-semibold">Claude Sonnet</span> analysiert deine Referenzbilder mit den gesetzten Lock-Regeln und erstellt einen strukturierten, detaillierten Prompt.
+            Die Referenzbilder werden mit ihren Rollen und Lock-Regeln analysiert; daraus entsteht ein strukturierter Prompt als JSON.
           </p>
         </div>
       </div>
@@ -1577,7 +1576,7 @@ function AppMain({ userEmail, authEnabled, onLogout }: { userEmail: string | nul
             <span className="text-heron-500">Bilder generieren.</span>
           </h2>
           <p className="text-ink-400 font-sans text-base mt-4 max-w-lg mx-auto leading-relaxed">
-            Referenzbilder hochladen · Lock-Regeln setzen · Claude generiert den Prompt · Gemini oder OpenAI rendert das Bild.
+            Referenzbilder hochladen · Lock-Regeln setzen · Der Prompt entsteht automatisch · Gemini oder OpenAI rendert das Bild.
           </p>
         </div>
       </div>
@@ -1817,7 +1816,7 @@ function AppMain({ userEmail, authEnabled, onLogout }: { userEmail: string | nul
       <footer className="border-t border-cream-200 bg-white mt-auto">
         <div className="max-w-4xl mx-auto px-5 py-4 flex items-center justify-between">
           <p className="text-ink-300 text-xs font-sans">Heron AI Studio</p>
-          <p className="text-ink-300 text-xs font-sans">Claude Sonnet Vision · {GEN_MODELS.map((m) => m.label).join(' · ')}</p>
+          <p className="text-ink-300 text-xs font-sans">Prompt: Gemini Flash · {GEN_MODELS.map((m) => m.label).join(' · ')}</p>
         </div>
       </footer>
     </div>

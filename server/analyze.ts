@@ -52,7 +52,14 @@ SCHEMA
 ═══════════════════════════════════════════
 RULES
 ═══════════════════════════════════════════
-1. OMIT keys you have nothing substantial to say about. An empty or generic value is worse than
+1. LENGTH — THIS IS A HARD BUDGET: the finished object must stay under 3000 characters, and
+   2000-2600 is the target. You are writing an instruction, not a description. Reach the budget
+   by OMITTING keys you have nothing substantial to say about — never by shortening "changes" or
+   "preserve", which carry the result. Say each thing ONCE, in the key where it belongs: an
+   object that restates the same instruction in "directive", "changes" and "notes" reads as less
+   precise, not more, and buries the user's actual brief. Before you finish, drop every key whose
+   value you could delete without losing information.
+2. OMIT keys you have nothing substantial to say about. An empty or generic value is worse than
    no key. Never write "n/a", "standard" or "as appropriate".
 2. BE LONG WHERE IT COUNTS. "changes" and "preserve" carry the result — write them out fully,
    with direction, amount and consequence. A one-word value there is a failure.
@@ -106,7 +113,10 @@ RULES
 14. In "output" set single_image true and note that no comparison, grid or before/after layout
     may be produced.
 15. Everything in English, values as plain readable sentences. Valid JSON: double quotes, no
-    trailing commas, no comments.`
+    trailing commas, no comments.
+16. Check the budget from rule 1 before you output. If the object is over 3000 characters, cut
+    the keys that add least — "materials_and_texture", "notes", generic "camera" or "scene"
+    values — not "changes" or "preserve".`
 
 /**
  * Wie gründlich der Prompt-Schreiber arbeitet. Die Stufe kostet Wartezeit:
@@ -121,6 +131,150 @@ const AUFWAND: Aufwand =
     : 'medium'
 const ANALYZE_MODEL = process.env.ANALYZE_MODEL?.trim() || ''
 
+// ── Wer schreibt den Prompt? ────────────────────────────────────────────────
+//
+// Gemini hat ein kostenloses Kontingent und reicht für diesen strukturierten
+// Prompt: Das Schema steht vollständig im System-Prompt, die Rollen stehen an
+// jedem Bild — viel zu entscheiden bleibt nicht. Deshalb ist Gemini die
+// Voreinstellung; Claude kostet hier Geld für wenig Unterschied.
+//
+// Über PROMPT_ANBIETER=claude umstellbar. Fehlt der jeweilige Schlüssel, wird
+// automatisch der andere Weg genommen — sonst stünde der Nutzer vor einem
+// Fehler, obwohl ein gangbarer Weg da wäre.
+type Anbieter = 'gemini' | 'claude'
+const GEWUENSCHTER_ANBIETER: Anbieter =
+  process.env.PROMPT_ANBIETER?.trim().toLowerCase() === 'claude' ? 'claude' : 'gemini'
+
+function waehleAnbieter(): Anbieter {
+  const hatGemini = Boolean(process.env.GOOGLE_AI_API_KEY)
+  const hatClaude = Boolean(process.env.ANTHROPIC_API_KEY)
+  if (GEWUENSCHTER_ANBIETER === 'gemini') return hatGemini ? 'gemini' : 'claude'
+  return hatClaude ? 'claude' : 'gemini'
+}
+
+// `gemini-flash-latest` ist ein mitlaufender Alias auf das jeweils aktuelle
+// Flash — dadurch bricht nichts weg, wenn Google eine Version abschaltet.
+const GEMINI_PROMPT_MODELS = ['gemini-flash-latest', 'gemini-3-flash-preview']
+
+/** Kurzfassung der Rolle, wie sie direkt vor jedem Bild steht. */
+const ROLLEN_NAME_KURZ: Record<string, string> = {
+  ausgang: 'SOURCE MATERIAL — content and identity come from here',
+  ziel: 'TARGET REFERENCE — look only, never its content or its people',
+  person: 'THE PERSON — this face must appear in the result',
+}
+
+interface GeminiPart {
+  text?: string
+  inlineData?: { mimeType: string; data: string }
+}
+
+/**
+ * Schreibt den Antwortstrom im SELBEN SSE-Format wie der Claude-Pfad, damit das
+ * Frontend nicht merkt, welcher Anbieter geantwortet hat.
+ */
+async function streamWithGemini(
+  res: Response,
+  systemPrompt: string,
+  userParts: GeminiPart[],
+): Promise<void> {
+  const apiKey = process.env.GOOGLE_AI_API_KEY
+  if (!apiKey) throw new Error('GOOGLE_AI_API_KEY not configured on server')
+
+  let lastErr: unknown
+  for (const model of GEMINI_PROMPT_MODELS) {
+    try {
+      const url = `https://generativelanguage.googleapis.com/v1beta/models/${model}:streamGenerateContent?alt=sse&key=${apiKey}`
+      const upstream = await fetch(url, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          systemInstruction: { parts: [{ text: systemPrompt }] },
+          contents: [{ role: 'user', parts: userParts }],
+          generationConfig: {
+            // Die Flash-Modelle denken vor der Antwort mit, und diese
+            // Denk-Tokens zählen gegen maxOutputTokens. Mit einem knappen
+            // Budget bliebe für den Prompt nichts übrig und die Antwort käme
+            // leer zurück. Also reichlich Budget und wenig Denken: Das Schema
+            // steht im System-Prompt, viel zu grübeln gibt es nicht.
+            maxOutputTokens: 8000,
+            temperature: 1,
+            thinkingConfig: { thinkingLevel: 'low' },
+          },
+        }),
+      })
+
+      if (!upstream.ok || !upstream.body) {
+        const detail = await upstream.text().catch(() => '')
+        let msg = `Gemini ${upstream.status}`
+        try { msg = JSON.parse(detail)?.error?.message ?? msg } catch { /* Rohtext behalten */ }
+        throw Object.assign(new Error(msg), { status: upstream.status })
+      }
+
+      if (!res.headersSent) {
+        res.setHeader('Content-Type', 'text/event-stream')
+        res.setHeader('Cache-Control', 'no-cache')
+        res.setHeader('Connection', 'keep-alive')
+        res.flushHeaders()
+      }
+
+      const reader = upstream.body.getReader()
+      const decoder = new TextDecoder()
+      let buffer = ''
+      let sawText = false
+
+      while (true) {
+        const { done, value } = await reader.read()
+        if (done) break
+        buffer += decoder.decode(value, { stream: true })
+        // Zeilenweise auswerten: Google trennt die Ereignisse mit CRLF, andere
+        // Endpunkte mit LF. Ein Split auf "\n\n" verfehlt CRLF komplett und
+        // der Puffer läuft still voll — deshalb /\r?\n/ und die letzte,
+        // womöglich unvollständige Zeile aufheben.
+        const lines = buffer.split(/\r?\n/)
+        buffer = lines.pop() ?? ''
+        for (const raw of lines) {
+          const line = raw.trim()
+          if (!line.startsWith('data:')) continue
+          const payload = line.slice(5).trim()
+          if (!payload || payload === '[DONE]') continue
+          try {
+            const parsed = JSON.parse(payload)
+            const parts = parsed?.candidates?.[0]?.content?.parts ?? []
+            for (const part of parts) {
+              // Denkteile gehören nicht in den Prompt.
+              if (part?.thought === true) continue
+              if (typeof part?.text === 'string' && part.text.length > 0) {
+                sawText = true
+                res.write(`data: ${JSON.stringify({ type: 'text', text: part.text })}\n\n`)
+              }
+            }
+          } catch {
+            // Unvollständiges JSON — der Rest kommt mit dem nächsten Chunk.
+          }
+        }
+      }
+
+      if (!sawText) throw new Error('Gemini hat keinen Text geliefert')
+      res.write(`data: ${JSON.stringify({ type: 'done' })}\n\n`)
+      res.end()
+      return
+    } catch (err) {
+      // Nach dem ersten gesendeten Byte lässt sich das Modell nicht mehr wechseln.
+      if (res.headersSent) throw err
+      const status = (err as { status?: number })?.status
+      const wiederholbar = status === 429 || status === 404 || status === 500 || status === 503
+      const hatNaechstes = model !== GEMINI_PROMPT_MODELS[GEMINI_PROMPT_MODELS.length - 1]
+      if (wiederholbar && hatNaechstes) {
+        console.warn(`[analyze] ${model} nicht verfügbar (${status}), versuche nächstes Modell…`)
+        lastErr = err
+        continue
+      }
+      throw err
+    }
+  }
+  throw lastErr ?? new Error('Kein Gemini-Modell verfügbar')
+}
+
 interface ImageSetting {
   name: string
   /**
@@ -131,8 +285,6 @@ interface ImageSetting {
    * falschen Bild im Ergebnis.
    */
   rolle?: 'ausgang' | 'ziel' | 'person'
-  /** Der Rollentext im Wortlaut, wie ihn auch das Bildmodell bekommt. */
-  rollenRegel?: string
   faceLock: boolean
   objectLock: boolean
   customLock: string
@@ -512,6 +664,30 @@ export async function analyzeImages(req: Request, res: Response) {
       return res.status(400).json({ error: 'No images provided' })
     }
 
+    const anbieter = waehleAnbieter()
+    const auftragstext = buildUserMessage(
+      imageSettings, userDescription, promptMode, changeAreas, mockupType, mockupEnvironment)
+
+    if (anbieter === 'gemini') {
+      if (!process.env.GOOGLE_AI_API_KEY) {
+        return res.status(500).json({ error: 'GOOGLE_AI_API_KEY not configured on server' })
+      }
+      // Dieselbe Markierung je Bild wie im Claude-Pfad: Nummer und Rolle
+      // unmittelbar vor dem Bild, sonst muss das Modell die Zuordnung raten.
+      const parts: GeminiPart[] = files.flatMap((file, i): GeminiPart[] => {
+        const e = imageSettings[i]
+        const rolle = e?.rolle ? ` [${ROLLEN_NAME_KURZ[e.rolle] ?? e.rolle}]` : ''
+        return [
+          { text: `IMAGE ${i + 1} — "${e?.name ?? file.originalname}"${rolle}` },
+          { inlineData: { mimeType: file.mimetype, data: file.buffer.toString('base64') } },
+        ]
+      })
+      parts.push({ text: auftragstext })
+      console.log(`[analyze] Anbieter: Gemini, ${files.length} Bild(er)`)
+      await streamWithGemini(res, SYSTEM_PROMPT, parts)
+      return
+    }
+
     if (!process.env.ANTHROPIC_API_KEY) {
       return res.status(500).json({ error: 'ANTHROPIC_API_KEY not configured on server' })
     }
@@ -522,11 +698,6 @@ export async function analyzeImages(req: Request, res: Response) {
     // alle Bilder und danach der Text, musste das Modell aus der Reihenfolge
     // erschliessen, welches Bild welches ist — bei vier Vorlagen ging das
     // regelmässig daneben, und die Beschreibung von IMAGE 2 landete bei IMAGE 3.
-    const ROLLEN_NAME_KURZ: Record<string, string> = {
-      ausgang: 'SOURCE MATERIAL — content and identity come from here',
-      ziel: 'TARGET REFERENCE — look only, never its content or its people',
-      person: 'THE PERSON — this face must appear in the result',
-    }
     const imageContent: Anthropic.ContentBlockParam[] = files.flatMap((file, i): Anthropic.ContentBlockParam[] => {
       const s = imageSettings[i]
       const rolle = s?.rolle ? ` [${ROLLEN_NAME_KURZ[s.rolle] ?? s.rolle}]` : ''
@@ -578,10 +749,7 @@ export async function analyzeImages(req: Request, res: Response) {
           role: 'user' as const,
           content: [
             ...imageContent,
-            {
-              type: 'text' as const,
-              text: buildUserMessage(imageSettings, userDescription, promptMode, changeAreas, mockupType, mockupEnvironment),
-            },
+            { type: 'text' as const, text: auftragstext },
           ],
         },
       ],
