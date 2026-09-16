@@ -6,7 +6,7 @@ import type { UploadedImage, AnalysisStatus, GenerationStatus, PromptMode, Focus
 import { CHANGE_AREAS, MOCKUP_TYPES, GEN_MODELS, GEN_FAMILIEN, OPENAI_FORMATS, ratiosForModel,
   STANDARD_MODELL, istGpt, familieVon, kannTransparenz, modellDef } from './types'
 import type { RefRolle, RefBild } from './referenzen'
-import { ROLLEN_REGEL, baueLegende, begrenze } from './referenzen'
+import { ROLLEN_REGEL, baueLegende, begrenze, setzeManifest } from './referenzen'
 import { willGesichtLock, identitaetsKlausel } from './identitaet'
 
 pdfjsLib.GlobalWorkerOptions.workerSrc = `https://unpkg.com/pdfjs-dist@${pdfjsLib.version}/build/pdf.worker.min.mjs`
@@ -210,11 +210,118 @@ function ImageCard({
   )
 }
 
+// ── Spracheingabe ────────────────────────────────────────────────────────────
+//
+// Diktieren statt tippen. Die Web-Speech-Schnittstelle gibt es nicht überall —
+// in Safari und Firefox fehlt sie ganz. Statt einer Schaltfläche, die nichts
+// tut, erscheint sie dort erst gar nicht.
+//
+// Erkannte Sätze werden ANGEHÄNGT, nicht ersetzt: Wer schon etwas getippt hat
+// und dann diktiert, verlöre sonst seinen Text.
+
+interface SpracheErgebnis { transcript: string }
+interface SpracheAlternative { 0: SpracheErgebnis; isFinal: boolean; length: number }
+interface SpracheEvent { resultIndex: number; results: { length: number; [i: number]: SpracheAlternative } }
+interface Spracherkenner {
+  lang: string; continuous: boolean; interimResults: boolean
+  start(): void; stop(): void
+  onresult: ((e: SpracheEvent) => void) | null
+  onerror: ((e: { error: string }) => void) | null
+  onend: (() => void) | null
+}
+
+function erkennerBauen(): Spracherkenner | null {
+  const w = window as unknown as { SpeechRecognition?: new () => Spracherkenner; webkitSpeechRecognition?: new () => Spracherkenner }
+  const Klasse = w.SpeechRecognition ?? w.webkitSpeechRecognition
+  return Klasse ? new Klasse() : null
+}
+
+function Spracheingabe({ onText, disabled }: { onText: (text: string) => void; disabled?: boolean }) {
+  const [laeuft, setLaeuft] = useState(false)
+  const [fehler, setFehler] = useState<string | null>(null)
+  const erkennerRef = useRef<Spracherkenner | null>(null)
+  const [moeglich] = useState(() => erkennerBauen() !== null)
+
+  // Beim Verlassen abschalten, sonst hört das Mikrofon weiter zu.
+  useEffect(() => () => { erkennerRef.current?.stop() }, [])
+
+  if (!moeglich) return null
+
+  const umschalten = () => {
+    if (laeuft) {
+      erkennerRef.current?.stop()
+      return
+    }
+    const e = erkennerBauen()
+    if (!e) return
+    e.lang = 'de-DE'
+    e.continuous = true
+    e.interimResults = false
+    e.onresult = (ev) => {
+      let neu = ''
+      for (let i = ev.resultIndex; i < ev.results.length; i++) {
+        if (ev.results[i].isFinal) neu += ev.results[i][0].transcript
+      }
+      if (neu.trim()) onText(neu.trim())
+    }
+    e.onerror = (ev) => {
+      setFehler(ev.error === 'not-allowed'
+        ? 'Kein Zugriff aufs Mikrofon — im Browser erlauben.'
+        : `Spracheingabe: ${ev.error}`)
+      setLaeuft(false)
+    }
+    e.onend = () => setLaeuft(false)
+    erkennerRef.current = e
+    setFehler(null)
+    e.start()
+    setLaeuft(true)
+  }
+
+  return (
+    <div className="flex items-center gap-2">
+      <button type="button" onClick={umschalten} disabled={disabled}
+        title={laeuft ? 'Aufnahme beenden' : 'Diktieren — der erkannte Text wird angehängt'}
+        className={`inline-flex items-center gap-1.5 px-2.5 py-1.5 text-[11px] font-sans font-medium border transition-colors duration-150
+          ${laeuft ? 'border-red-500 bg-red-500 text-white' : 'border-cream-300 bg-white text-ink-500 hover:border-heron-500 hover:text-heron-600'}
+          ${disabled ? 'opacity-50 cursor-not-allowed' : ''}`}>
+        <svg className={`w-3.5 h-3.5 ${laeuft ? 'animate-pulse-soft' : ''}`} fill="none" stroke="currentColor" viewBox="0 0 24 24">
+          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2}
+            d="M19 11a7 7 0 01-14 0m7 7v3m0-3a4 4 0 004-4V6a4 4 0 10-8 0v5a4 4 0 004 4z" />
+        </svg>
+        {laeuft ? 'Hört zu…' : 'Diktieren'}
+      </button>
+      {fehler && <span className="text-[10px] font-sans text-red-600">{fehler}</span>}
+    </div>
+  )
+}
+
 // ── Upload Zone ───────────────────────────────────────────────────────────────
+//
+// Es gibt zwei davon: Ausgangsmaterial und Zielreferenz. Die Trennung ist keine
+// Kosmetik — sie entscheidet, was das Bildmodell aus einem Bild übernehmen darf
+// (Inhalt und Gesicht) und was nur seine Anmutung beisteuert. Vorher musste die
+// Rolle an jeder Karte einzeln gesetzt werden, und wer das vergaß, bekam die
+// Person aus dem falschen Bild.
 function UploadZone({
-  images, onAdd, onRemove, onClear, onUpdateImage, disabled,
+  images, rolle, nummerVon, titel, hinweis, breit, aktiv, onAktiv,
+  onAdd, onRemove, onClear, onUpdateImage, disabled,
 }: {
-  images: UploadedImage[]; onAdd: (files: FileList | File[]) => void
+  images: UploadedImage[]
+  rolle: RefRolle
+  /**
+   * Die Nummer, unter der ein Bild beim Bildmodell erscheint. Zählte jede
+   * Fläche für sich, stünde auf der Karte „1", während im Prompt „IMAGE 3"
+   * gemeint ist — und niemand sähe den Fehler.
+   */
+  nummerVon: (img: UploadedImage) => number
+  titel: string
+  hinweis: string
+  /** Die breite Fläche bekommt mehr Höhe und einen ausführlicheren Text. */
+  breit?: boolean
+  /** Landet ein Cmd+V gerade in dieser Fläche? */
+  aktiv?: boolean
+  onAktiv?: () => void
+  onAdd: (files: FileList | File[], rolle: RefRolle) => void
   onRemove: (id: string) => void; onClear: () => void
   onUpdateImage: (id: string, field: 'faceLock' | 'objectLock' | 'customLock' | 'rolle', value: boolean | string) => void
   disabled?: boolean
@@ -224,44 +331,51 @@ function UploadZone({
 
   const handleDrop = (e: React.DragEvent) => {
     e.preventDefault(); setDragging(false)
-    if (!disabled) onAdd(e.dataTransfer.files)
+    if (!disabled) onAdd(e.dataTransfer.files, rolle)
   }
   const handleDragOver = (e: React.DragEvent) => { e.preventDefault(); if (!disabled) setDragging(true) }
   const handleDragLeave = () => setDragging(false)
 
   return (
     <div className="flex flex-col gap-3">
+      <div className="flex items-baseline justify-between gap-2">
+        <span className="label-section">{titel}</span>
+        {aktiv && (
+          <span className="text-[10px] font-sans text-heron-600 whitespace-nowrap">⌘V landet hier</span>
+        )}
+      </div>
       <div onDrop={handleDrop} onDragOver={handleDragOver} onDragLeave={handleDragLeave}
-        onClick={() => !disabled && inputRef.current?.click()}
-        className={`relative flex flex-col items-center justify-center gap-4 border-2 border-dashed rounded-2xl cursor-pointer select-none transition-all duration-200
-          ${images.length > 0 ? 'p-5' : 'p-10'}
-          ${dragging ? 'drop-zone-active' : 'border-cream-300 bg-cream-50 hover:border-heron-300 hover:bg-heron-50/50'}
+        onMouseEnter={onAktiv}
+        onClick={() => { onAktiv?.(); if (!disabled) inputRef.current?.click() }}
+        className={`relative flex flex-col items-center justify-center gap-3 border-2 border-dashed cursor-pointer select-none transition-all duration-200
+          ${images.length > 0 ? 'p-4' : (breit ? 'p-8' : 'p-6')}
+          ${dragging ? 'drop-zone-active' : aktiv
+            ? 'border-heron-400 bg-heron-50/60'
+            : 'border-cream-300 bg-cream-50 hover:border-heron-300 hover:bg-heron-50/50'}
           ${disabled ? 'opacity-50 cursor-not-allowed' : ''}`}>
         <input ref={inputRef} type="file" accept="image/*,application/pdf" multiple className="hidden"
-          onChange={(e) => { if (e.target.files) onAdd(e.target.files); e.target.value = '' }} disabled={disabled} />
+          onChange={(e) => { if (e.target.files) onAdd(e.target.files, rolle); e.target.value = '' }} disabled={disabled} />
         {images.length === 0 ? (
           <>
-            <div className={`w-16 h-16 rounded-2xl flex items-center justify-center transition-all duration-200 ${dragging ? 'bg-heron-100' : 'bg-white shadow-card'}`}>
-              <svg className={`w-7 h-7 transition-colors duration-200 ${dragging ? 'text-heron-500' : 'text-ink-300'}`} fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <div className={`w-12 h-12 flex items-center justify-center transition-all duration-200 ${dragging ? 'bg-heron-100' : 'bg-white border border-cream-200'}`}>
+              <svg className={`w-6 h-6 transition-colors duration-200 ${dragging ? 'text-heron-500' : 'text-ink-300'}`} fill="none" stroke="currentColor" viewBox="0 0 24 24">
                 <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5}
                   d="M4 16l4.586-4.586a2 2 0 012.828 0L16 16m-2-2l1.586-1.586a2 2 0 012.828 0L20 14m-6-6h.01M6 20h12a2 2 0 002-2V6a2 2 0 00-2-2H6a2 2 0 00-2 2v12a2 2 0 002 2z" />
               </svg>
             </div>
             <div className="text-center">
-              <p className="font-display font-semibold text-ink-700 text-base">
-                {dragging ? 'Jetzt loslassen' : 'Referenzbild hier ablegen'}
+              <p className="font-sans font-medium text-ink-700 text-sm">
+                {dragging ? 'Jetzt loslassen' : 'Ablegen, einfügen oder durchsuchen'}
               </p>
-              <p className="text-ink-400 text-sm mt-1 font-sans">
-                oder <span className="text-heron-600 font-medium underline underline-offset-2">durchsuchen</span> · JPEG, PNG, WebP, PDF · max 50 MB
-              </p>
+              <p className="text-ink-400 text-xs mt-1 font-sans leading-snug">{hinweis}</p>
             </div>
           </>
         ) : (
-          <div className="flex items-center gap-2 text-ink-400 text-sm font-sans">
-            <svg className="w-4 h-4 text-heron-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+          <div className="flex items-center gap-2 text-ink-400 text-xs font-sans text-center">
+            <svg className="w-4 h-4 text-heron-400 shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
               <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4v16m8-8H4" />
             </svg>
-            Weiteres Bild ablegen oder <span className="text-heron-600 underline underline-offset-2">durchsuchen</span>
+            Weiteres Bild
           </div>
         )}
       </div>
@@ -269,15 +383,15 @@ function UploadZone({
         <div className="flex flex-col gap-2 animate-slide-up">
           <div className="flex items-center justify-between px-1">
             <span className="text-xs font-sans text-ink-400">
-              {images.length} Bild{images.length !== 1 ? 'er' : ''} — je Bild Lock-Regeln setzen
+              {images.length} Bild{images.length !== 1 ? 'er' : ''}
             </span>
             <button onClick={onClear} disabled={disabled}
               className="btn-ghost text-xs py-1 px-2 text-red-400 hover:text-red-600 hover:bg-red-50">
               Alle entfernen
             </button>
           </div>
-          {images.map((img, index) => (
-            <ImageCard key={img.id} img={img} index={index}
+          {images.map((img) => (
+            <ImageCard key={img.id} img={img} index={nummerVon(img) - 1}
               onRemove={() => onRemove(img.id)}
               onUpdate={(field, value) => onUpdateImage(img.id, field, value)}
               disabled={disabled} />
@@ -320,11 +434,18 @@ function JobPanel({
   // Wichtig: Familie und gewähltes Modell sind GETRENNTER State. Läge nur das
   // aktive Modell im State, ginge beim Wechsel der Familie die Modellwahl in
   // der anderen jedes Mal verloren.
-  const [aktiveFamilie, setAktiveFamilie] = useState<GenFamilie>(
-    () => ausVorlage<GenFamilie>(v, 'aktiveFamilie', familieVon(STANDARD_MODELL)))
+  // Mehrere Familien gleichzeitig: Dann rechnet jedes gewählte Modell denselben
+  // Auftrag, und man sieht nebeneinander, wer die Aufgabe besser löst.
+  const [aktiveFamilien, setAktiveFamilien] = useState<GenFamilie[]>(
+    () => ausVorlage<GenFamilie[]>(v, 'aktiveFamilien', [familieVon(STANDARD_MODELL)]))
   const [familienModell, setFamilienModell] = useState<Record<GenFamilie, GenModel>>(
     () => ausVorlage<Record<GenFamilie, GenModel>>(v, 'familienModell', { gpt: STANDARD_MODELL, nano: 'pro' }))
-  const selectedModel = familienModell[aktiveFamilie]
+  // Reihenfolge kommt aus GEN_FAMILIEN, damit GPT Image immer zuerst rechnet.
+  const aktiveModelle = useMemo(
+    () => GEN_FAMILIEN.filter((f) => aktiveFamilien.includes(f.id)).map((f) => familienModell[f.id]),
+    [aktiveFamilien, familienModell])
+  /** Für Beschriftungen und Einzelangaben: das erste gewählte Modell. */
+  const selectedModel = aktiveModelle[0] ?? STANDARD_MODELL
   const [selectedResolution, setSelectedResolution] = useState<'1K' | '2K' | '4K' | 'auto'>(
     () => ausVorlage<'1K' | '2K' | '4K' | 'auto'>(v, 'selectedResolution', '2K'))
   const [selectedAspectRatio, setSelectedAspectRatio] = useState(() => ausVorlage(v, 'selectedAspectRatio', '1:1'))
@@ -340,34 +461,59 @@ function JobPanel({
   const [genResults, setGenResults] = useState<Array<{ label: string; image: string }>>([])
   const [genProgress, setGenProgress] = useState<{ done: number; total: number } | null>(null)
 
-  const availableRatios = ratiosForModel(selectedModel)
+  // Nur was JEDES gewählte Modell kann, darf angeboten werden. Ein Format, das
+  // eines davon nicht kennt, liesse den Auftrag sonst mittendrin scheitern.
+  const availableRatios = useMemo(
+    () => aktiveModelle
+      .map(ratiosForModel)
+      .reduce((a, b) => a.filter((r) => b.includes(r)), ratiosForModel(selectedModel)),
+    [aktiveModelle, selectedModel])
+  const alleGpt = aktiveModelle.every(istGpt)
+  const alleTransparenz = aktiveModelle.length > 0 && aktiveModelle.every(kannTransparenz)
   const availableResolutions: Array<'auto' | '1K' | '2K' | '4K'> =
-    istGpt(selectedModel) ? ['auto', '1K', '2K', '4K'] : ['1K', '2K', '4K']
-  /** Auflösung und Format an ein Modell anpassen, das sie vielleicht nicht kennt. */
-  const passeEinstellungenAn = (m: GenModel) => {
-    if (!ratiosForModel(m).includes(selectedAspectRatio)) setSelectedAspectRatio('1:1')
-    if (!istGpt(m) && selectedResolution === 'auto') setSelectedResolution('2K')
-    if (!kannTransparenz(m)) setTransparent(false)
-  }
-  const pickFamilie = (f: GenFamilie) => {
-    setAktiveFamilie(f)
-    passeEinstellungenAn(familienModell[f])
-  }
-  // Wer im Dropdown etwas aussucht, will damit rechnen — also Familie mit aktivieren.
-  const setzeModell = (f: GenFamilie, m: GenModel) => {
-    setFamilienModell((prev) => ({ ...prev, [f]: m }))
-    setAktiveFamilie(f)
-    passeEinstellungenAn(m)
+    alleGpt ? ['auto', '1K', '2K', '4K'] : ['1K', '2K', '4K']
+
+  /** Einstellungen an eine Modellauswahl anpassen, die sie vielleicht nicht kennt. */
+  const passeEinstellungenAn = (modelle: GenModel[]) => {
+    if (modelle.length === 0) return
+    const gemeinsam = modelle
+      .map(ratiosForModel)
+      .reduce((a, b) => a.filter((r) => b.includes(r)), ratiosForModel(modelle[0]))
+    if (!gemeinsam.includes(selectedAspectRatio)) setSelectedAspectRatio('1:1')
+    if (!modelle.every(istGpt) && selectedResolution === 'auto') setSelectedResolution('2K')
+    if (!modelle.every(kannTransparenz)) setTransparent(false)
   }
 
-  const addImages = useCallback((files: FileList | File[]) => {
+  // Familie an- und abwählen. Die letzte bleibt stehen — ohne Modell geht nichts.
+  const toggleFamilie = (f: GenFamilie) => {
+    setAktiveFamilien((prev) => {
+      const neu = prev.includes(f)
+        ? (prev.length > 1 ? prev.filter((x) => x !== f) : prev)
+        : [...prev, f]
+      passeEinstellungenAn(GEN_FAMILIEN.filter((x) => neu.includes(x.id)).map((x) => familienModell[x.id]))
+      return neu
+    })
+  }
+
+  // Wer im Dropdown etwas aussucht, will damit rechnen — also Familie mit anhaken.
+  const setzeModell = (f: GenFamilie, m: GenModel) => {
+    const naechste = { ...familienModell, [f]: m }
+    setFamilienModell(naechste)
+    setAktiveFamilien((prev) => {
+      const neu = prev.includes(f) ? prev : [...prev, f]
+      passeEinstellungenAn(GEN_FAMILIEN.filter((x) => neu.includes(x.id)).map((x) => naechste[x.id]))
+      return neu
+    })
+  }
+
+  const addImages = useCallback((files: FileList | File[], rolle: RefRolle = 'ausgang') => {
     const IMAGE_EXTS = new Set(['jpg', 'jpeg', 'png', 'webp', 'gif', 'pdf'])
     const accepted = Array.from(files).filter((f) => {
       if (f.type.startsWith('image/') || f.type === 'application/pdf') return true
       const ext = f.name.split('.').pop()?.toLowerCase() ?? ''
       return IMAGE_EXTS.has(ext)
     })
-    const neue = accepted.map(createUploadedImage)
+    const neue = accepted.map((f) => ({ ...createUploadedImage(f), rolle }))
     setImages((prev) => [...prev, ...neue])
     // Maße nachtragen, sobald sie bekannt sind — für den Auflösungshinweis.
     for (const eintrag of neue) {
@@ -383,9 +529,17 @@ function JobPanel({
     setImages((prev) => { const img = prev.find((i) => i.id === id); if (img) URL.revokeObjectURL(img.preview); return prev.filter((i) => i.id !== id) })
   }, [])
 
-  const clearImages = useCallback(() => {
-    setImages((prev) => { prev.forEach((i) => URL.revokeObjectURL(i.preview)); return [] })
+  const clearRolle = useCallback((rolle: RefRolle) => {
+    setImages((prev) => {
+      prev.filter((i) => i.rolle === rolle).forEach((i) => URL.revokeObjectURL(i.preview))
+      return prev.filter((i) => i.rolle !== rolle)
+    })
   }, [])
+
+  /** Welche Fläche bekommt das nächste Cmd+V? */
+  const [einfuegeZiel, setEinfuegeZiel] = useState<RefRolle>('ausgang')
+  const ausgangsBilder = useMemo(() => images.filter((i) => i.rolle !== 'ziel'), [images])
+  const zielBilder = useMemo(() => images.filter((i) => i.rolle === 'ziel'), [images])
 
   const updateImageSetting = useCallback((id: string, field: 'faceLock' | 'objectLock' | 'customLock' | 'rolle', value: boolean | string) => {
     setImages((prev) => prev.map((img) => img.id === id ? { ...img, [field]: value } : img))
@@ -405,6 +559,84 @@ function JobPanel({
   const geordneteBilder = useMemo(
     () => [...images].sort((a, b) => ROLLEN_ORDNUNG.indexOf(a.rolle) - ROLLEN_ORDNUNG.indexOf(b.rolle)),
     [images])
+  // ── Einfügen aus der Zwischenablage ─────────────────────────────────────
+  //
+  // Der Horcher hängt am Fenster, weil ein kopiertes Bild eingefügt wird, ohne
+  // dass vorher irgendwo geklickt wurde — es gibt also kein Element mit Fokus.
+  // Bei mehreren Reitern reagiert nur der sichtbare: offsetParent ist bei
+  // ausgeblendeten Panels null.
+  const wurzelRef = useRef<HTMLDivElement>(null)
+  const [eingefuegt, setEingefuegt] = useState<{ text: string; fehler?: boolean } | null>(null)
+  const zielRef = useRef<RefRolle>('ausgang')
+  zielRef.current = einfuegeZiel
+
+  const melde = useCallback((text: string, fehler = false) => {
+    setEingefuegt({ text, fehler })
+    window.setTimeout(() => setEingefuegt(null), 3000)
+  }, [])
+
+  /**
+   * Adresse eines Bildes einfügen. Der Browser darf ein fremdes Bild wegen CORS
+   * meist nicht selbst laden, deshalb holt es der Server.
+   */
+  const holeVonAdresse = useCallback(async (url: string, rolle: RefRolle) => {
+    melde('Bild wird geholt…')
+    try {
+      const res = await fetch('/api/bild-holen', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        credentials: 'same-origin',
+        body: JSON.stringify({ url }),
+      })
+      const daten = await res.json()
+      if (!res.ok) throw new Error(daten.error || 'Bild konnte nicht geholt werden')
+      const bytes = Uint8Array.from(atob(daten.data), (c) => c.charCodeAt(0))
+      const datei = new File([bytes], daten.name || 'eingefuegt', { type: daten.mimeType })
+      addImages([datei], rolle)
+      melde(`Bild eingefügt — ${rolle === 'ziel' ? 'Zielreferenz' : 'Ausgangsmaterial'}`)
+    } catch (e) {
+      melde(e instanceof Error ? e.message : 'Bild konnte nicht geholt werden', true)
+    }
+  }, [addImages, melde])
+
+  useEffect(() => {
+    const beiEinfuegen = (e: ClipboardEvent) => {
+      if (!wurzelRef.current || wurzelRef.current.offsetParent === null) return
+      const ziel = e.target as HTMLElement | null
+      const dateien = Array.from(e.clipboardData?.files ?? []).filter((f) => f.type.startsWith('image/'))
+      // In einem Textfeld gilt das Einfügen dem Text — ausser es liegt
+      // tatsächlich ein Bild in der Zwischenablage.
+      if (ziel && /^(INPUT|TEXTAREA)$/.test(ziel.tagName) && dateien.length === 0) return
+
+      const wohin = zielRef.current
+      if (dateien.length > 0) {
+        e.preventDefault()
+        addImages(dateien, wohin)
+        melde(`${dateien.length} Bild${dateien.length !== 1 ? 'er' : ''} eingefügt — ${wohin === 'ziel' ? 'Zielreferenz' : 'Ausgangsmaterial'}`)
+        return
+      }
+
+      // Kein Bild, aber vielleicht ein Verweis darauf: Wer auf einer Webseite
+      // einen Ausschnitt markiert und kopiert, hat nur HTML mit einem <img> in
+      // der Zwischenablage — genau der Fall beim Kopieren aus der Google-Suche.
+      const html = e.clipboardData?.getData('text/html') ?? ''
+      const text = (e.clipboardData?.getData('text/plain') ?? '').trim()
+      const ausHtml = html.match(/<img[^>]+src=["']([^"']+)["']/i)?.[1]
+      const adresse = ausHtml
+        ?? (/^https?:\/\//i.test(text) ? text : undefined)
+      if (!adresse) return
+      e.preventDefault()
+      void holeVonAdresse(adresse, wohin)
+    }
+    window.addEventListener('paste', beiEinfuegen)
+    return () => window.removeEventListener('paste', beiEinfuegen)
+  }, [addImages, holeVonAdresse, melde])
+
+  /** Die Nummer eines Bildes in der verbindlichen Reihenfolge, 1-basiert. */
+  const nummerVon = useCallback(
+    (img: UploadedImage) => geordneteBilder.findIndex((b) => b.id === img.id) + 1,
+    [geordneteBilder])
+
   /** Bildnummern (1-basiert) je Rolle — für die Identitätsklausel. */
   const nummernMit = (rolle: RefRolle) => geordneteBilder
     .map((b, i) => ({ b, nr: i + 1 })).filter((x) => x.b.rolle === rolle).map((x) => x.nr)
@@ -472,7 +704,11 @@ function JobPanel({
   const handleGenerate = useCallback(async () => {
     if (!prompt.trim()) return
     setGenerationStatus('generating'); setGenerationError(null); setGeneratedImage(null)
-    setGenResults([]); setGenProgress({ done: 0, total: variantCount })
+    // Jede Variante läuft auf jedem gewählten Modell. Nach Variante gruppiert,
+    // damit früh je ein Ergebnis pro Modell dasteht.
+    const laeufe = Array.from({ length: variantCount }, (_, i) => i + 1)
+      .flatMap((v) => aktiveModelle.map((model) => ({ v, model })))
+    setGenResults([]); setGenProgress({ done: 0, total: laeufe.length })
     try {
       const bilder = begrenze(geordneteBilder)
       const referenceImages = await Promise.all(
@@ -497,22 +733,34 @@ function JobPanel({
       }))
       const legende = baueLegende(rollenListe)
       const klausel = identitaetsKlausel(nummernMit('ausgang'), nummernMit('ziel'))
-      const volltext = [legende, prompt.trim(), klausel].filter(Boolean).join('\n\n')
+      // Der Prompt-Schreiber kennt die endgültige Reihenfolge nicht sicher —
+      // er sieht die Bilder, aber die Liste wird hier gebildet. Deshalb wird
+      // der Block `reference_images` deterministisch gesetzt statt ihm
+      // überlassen: Sonst stehen am Ende zwei Listen im JSON, die sich
+      // widersprechen. Ist der Prompt kein JSON (etwa von Hand überschrieben),
+      // bleibt er unverändert.
+      const mitManifest = setzeManifest(prompt, rollenListe)
+      const volltext = [legende, mitManifest, klausel].filter(Boolean).join('\n\n')
 
       // Nacheinander statt parallel: So steht das erste Bild sofort da, jeder
       // einzelne Aufruf bleibt im Zeitlimit der Vercel-Function, und wir laufen
       // nicht in die Mengenbegrenzung der Anbieter.
       const fertig: Array<{ label: string; image: string }> = []
       const fehler: string[] = []
-      for (let v = 1; v <= variantCount; v++) {
+      for (const lauf of laeufe) {
+        // Die Beschriftung nennt nur, was sich zwischen den Läufen unterscheidet.
+        const teile: string[] = []
+        if (variantCount > 1) teile.push(`Variante ${lauf.v}`)
+        if (aktiveModelle.length > 1) teile.push(modellDef(lauf.model).label)
+        const name = teile.join(' · ') || 'Ergebnis'
         try {
           const res = await fetch('/api/generate', {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({
-              prompt: volltext, model: selectedModel, resolution: selectedResolution, aspectRatio: selectedAspectRatio,
-              outputFormat: istGpt(selectedModel) ? selectedOutputFormat : undefined,
-              transparent: kannTransparenz(selectedModel) && transparent ? true : undefined,
+              prompt: volltext, model: lauf.model, resolution: selectedResolution, aspectRatio: selectedAspectRatio,
+              outputFormat: istGpt(lauf.model) ? selectedOutputFormat : undefined,
+              transparent: kannTransparenz(lauf.model) && transparent ? true : undefined,
               referenceImages: referenceImages.length > 0 ? referenceImages : undefined,
             }),
           })
@@ -521,20 +769,20 @@ function JobPanel({
             throw new Error(err.error || `Server error: ${res.status}`)
           }
           const data = await res.json()
-          fertig.push({ label: variantCount > 1 ? `Variante ${v}` : 'Ergebnis', image: data.image })
+          fertig.push({ label: name, image: data.image })
           setGenResults([...fertig])
           // Das erste fertige Bild wird gleich das aktive, damit man nicht auf
           // die ganze Serie warten muss.
           if (fertig.length === 1) { setGeneratedImage(data.image); setGeneratedModel(data.model) }
         } catch (e) {
-          fehler.push(`Variante ${v}: ${e instanceof Error ? e.message : 'Fehler'}`)
+          fehler.push(`${name}: ${e instanceof Error ? e.message : 'Fehler'}`)
         }
-        setGenProgress({ done: fertig.length + fehler.length, total: variantCount })
+        setGenProgress({ done: fertig.length + fehler.length, total: laeufe.length })
       }
       if (fertig.length === 0) throw new Error(fehler.join(' · ') || 'Generierung fehlgeschlagen')
       // Teilerfolg ist kein Fehlschlag: Die fertigen Bilder bleiben stehen, der
       // Rest wird benannt.
-      setGenerationError(fehler.length > 0 ? `${fehler.length} von ${variantCount} fehlgeschlagen — ${fehler.join(' · ')}` : null)
+      setGenerationError(fehler.length > 0 ? `${fehler.length} von ${laeufe.length} fehlgeschlagen — ${fehler.join(' · ')}` : null)
       setGenerationStatus('done')
     } catch (err) {
       setGenerationError(err instanceof Error ? err.message : 'Generierung fehlgeschlagen')
@@ -542,7 +790,7 @@ function JobPanel({
     } finally {
       setGenProgress(null)
     }
-  }, [prompt, selectedModel, selectedResolution, selectedAspectRatio, selectedOutputFormat,
+  }, [prompt, aktiveModelle, selectedResolution, selectedAspectRatio, selectedOutputFormat,
       transparent, variantCount, geordneteBilder])
 
   // Dem Elternteil einen Lesezugriff auf den aktuellen Stand geben. Nur so
@@ -552,7 +800,7 @@ function JobPanel({
   const standRef = useRef<() => JobVorlage>(() => ({}))
   standRef.current = () => ({
     images, userDescription, promptMode, changeAreas, mockupType, mockupEnvironment, prompt,
-    aktiveFamilie, familienModell, selectedResolution, selectedAspectRatio, selectedOutputFormat,
+    aktiveFamilien, familienModell, selectedResolution, selectedAspectRatio, selectedOutputFormat,
     transparent, variantCount,
   })
   useEffect(() => { onAbzug?.(() => standRef.current()) }, [onAbzug])
@@ -561,7 +809,14 @@ function JobPanel({
   const canGenerate = prompt.trim().length > 0 && generationStatus !== 'generating'
 
   return (
-    <div className="flex flex-col gap-5">
+    <div className="flex flex-col gap-5" ref={wurzelRef}>
+
+      {eingefuegt && (
+        <div className={`px-3 py-2 text-xs font-sans animate-fade-in border
+          ${eingefuegt.fehler ? 'border-red-200 bg-red-50 text-red-700' : 'border-heron-200 bg-heron-50 text-heron-700'}`}>
+          {eingefuegt.text}
+        </div>
+      )}
 
       {/* Upload Zone */}
       {promptMode === 'generation' && images.length === 0 && (
@@ -569,8 +824,30 @@ function JobPanel({
           <span className="text-heron-600 font-medium">Optional:</span> Stil-Referenzbilder hochladen — oder einfach unten beschreiben.
         </p>
       )}
-      <UploadZone images={images} onAdd={addImages} onRemove={removeImage} onClear={clearImages}
-        onUpdateImage={updateImageSetting} disabled={analysisStatus === 'analyzing'} />
+      {/* Zwei Drittel Ausgangsmaterial, ein Drittel Zielreferenz: Der Inhalt
+          kommt aus dem Ausgangsmaterial, dort liegen in aller Regel auch mehr
+          Bilder. Die Zielreferenz steuert nur Anmutung bei und braucht selten
+          mehr als ein Bild. */}
+      <div className="grid grid-cols-1 sm:grid-cols-3 gap-4 items-start">
+        <div className="sm:col-span-2 flex flex-col gap-3">
+          <UploadZone
+            images={ausgangsBilder} rolle="ausgang" breit nummerVon={nummerVon}
+            titel="Ausgangsmaterial"
+            hinweis="Woraus etwas entsteht — wird originalgetreu übernommen, samt Gesicht. JPEG, PNG, WebP, PDF."
+            aktiv={einfuegeZiel === 'ausgang'} onAktiv={() => setEinfuegeZiel('ausgang')}
+            onAdd={addImages} onRemove={removeImage} onClear={() => clearRolle('ausgang')}
+            onUpdateImage={updateImageSetting} disabled={analysisStatus === 'analyzing'} />
+        </div>
+        <div className="flex flex-col gap-3">
+          <UploadZone
+            images={zielBilder} rolle="ziel" nummerVon={nummerVon}
+            titel="Zielreferenz"
+            hinweis="Wie das Ergebnis aussehen soll: Farbe, Licht, Perspektive, Ausschnitt — nicht die Objekte oder Personen daraus."
+            aktiv={einfuegeZiel === 'ziel'} onAktiv={() => setEinfuegeZiel('ziel')}
+            onAdd={addImages} onRemove={removeImage} onClear={() => clearRolle('ziel')}
+            onUpdateImage={updateImageSetting} disabled={analysisStatus === 'analyzing'} />
+        </div>
+      </div>
 
       {/* Mode Toggle + Settings */}
       <div className="card p-5 flex flex-col gap-5">
@@ -658,7 +935,11 @@ function JobPanel({
 
         {/* Description */}
         <div className="flex flex-col gap-2">
-          <span className="label-section">Was möchtest du machen?</span>
+          <div className="flex items-center justify-between gap-2">
+            <span className="label-section">Was möchtest du machen?</span>
+            <Spracheingabe disabled={analysisStatus === 'analyzing'}
+              onText={(t) => setUserDescription((alt) => (alt.trim() ? `${alt.trim()} ${t}` : t))} />
+          </div>
           <textarea value={userDescription} onChange={(e) => setUserDescription(e.target.value)}
             disabled={analysisStatus === 'analyzing'}
             placeholder={
@@ -793,16 +1074,32 @@ function JobPanel({
                   Hover, deshalb steht dasselbe noch einmal unter dem Dropdown. */}
               <div className="grid grid-cols-2 gap-2">
                 {GEN_FAMILIEN.map((f) => {
-                  const aktiv = aktiveFamilie === f.id
+                  const aktiv = aktiveFamilien.includes(f.id)
                   const modelle = GEN_MODELS.filter((m) => m.familie === f.id)
                   const gewaehlt = modellDef(familienModell[f.id])
                   return (
                     <div key={f.id} className="flex flex-col gap-1">
                       <div className="relative group">
-                        <button onClick={() => pickFamilie(f.id)}
+                        <button onClick={() => toggleFamilie(f.id)}
+                          aria-pressed={aktiv}
+                          title={aktiv
+                            ? (aktiveFamilien.length > 1 ? 'Abwählen' : 'Mindestens ein Modell muss gewählt bleiben')
+                            : 'Zusätzlich mit diesem Modell rechnen'}
                           className={`mode-btn w-full !flex-col gap-0.5 text-xs py-2.5 leading-tight text-center
                             ${aktiv ? 'mode-btn-active' : 'mode-btn-inactive'}`}>
-                          <span className="text-sm">{f.label}</span>
+                          <span className="flex items-center gap-1.5 text-sm">
+                            {/* Ein Haken, damit sichtbar ist: Das lässt sich mehrfach
+                                ankreuzen, es ist kein Entweder-oder. */}
+                            <span className={`w-3.5 h-3.5 shrink-0 border flex items-center justify-center
+                              ${aktiv ? 'border-white bg-white' : 'border-ink-300'}`}>
+                              {aktiv && (
+                                <svg className="w-2.5 h-2.5 text-heron-500" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={4} d="M5 13l4 4L19 7" />
+                                </svg>
+                              )}
+                            </span>
+                            {f.label}
+                          </span>
                           <span className="text-[10px] opacity-60">{gewaehlt.label}</span>
                         </button>
                         <div className="hidden sm:block pointer-events-none absolute z-30 left-0 right-0 bottom-full mb-2
@@ -847,9 +1144,12 @@ function JobPanel({
                 ))}
               </div>
               <span className="text-[10px] font-sans text-ink-400 leading-snug px-0.5">
-                {variantCount === 1
-                  ? 'Ein Bild.'
-                  : `${variantCount} Aufrufe, also auch ${variantCount}× die Kosten.`}
+                {(() => {
+                  const gesamt = variantCount * Math.max(aktiveModelle.length, 1)
+                  return gesamt === 1
+                    ? 'Ein Bild.'
+                    : `${gesamt} Aufrufe, also auch ${gesamt}× die Kosten.`
+                })()}
               </span>
             </div>
             <div className="flex flex-col gap-1.5">
@@ -874,13 +1174,13 @@ function JobPanel({
                 </button>
               ))}
             </div>
-            {istGpt(selectedModel) && (
+            {alleGpt && (
               <p className="text-[11px] font-sans text-ink-400 mt-0.5">
                 {modellDef(selectedModel).hint} rendert in jedem Format nativ — 4K erreicht max. ~8.3 MP (z.B. 3840×2160 bei 16:9, 2880×2880 bei 1:1, 3072×2048 bei 3:2).
               </p>
             )}
           </div>
-          {kannTransparenz(selectedModel) && (
+          {alleTransparenz && (
             <label className="flex items-start gap-2 cursor-pointer">
               <input type="checkbox" checked={transparent}
                 onChange={(e) => setTransparent(e.target.checked)}
@@ -894,7 +1194,7 @@ function JobPanel({
               </span>
             </label>
           )}
-          {istGpt(selectedModel) && (
+          {alleGpt && (
             <div className="flex flex-col gap-1.5">
               <span className="label-section">Output-Format</span>
               <div className="bg-cream-100 rounded-xl p-1 flex gap-1">
@@ -914,16 +1214,22 @@ function JobPanel({
                   <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
                   <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z" />
                 </svg>
-                {modellDef(selectedModel).label} generiert…
+                {aktiveModelle.length > 1
+                  ? `${aktiveModelle.length} Modelle rechnen…`
+                  : `${modellDef(selectedModel).label} generiert…`}
               </>
             ) : (
               <>
                 <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                   <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 16l4.586-4.586a2 2 0 012.828 0L16 16m-2-2l1.586-1.586a2 2 0 012.828 0L20 14m-6-6h.01M6 20h12a2 2 0 002-2V6a2 2 0 00-2-2H6a2 2 0 00-2 2v12a2 2 0 002 2z" />
                 </svg>
-                {variantCount > 1
-                  ? `${variantCount} Bilder mit ${modellDef(selectedModel).label} generieren`
-                  : `mit ${modellDef(selectedModel).label} generieren`}
+                {(() => {
+                  const gesamt = variantCount * Math.max(aktiveModelle.length, 1)
+                  const wer = aktiveModelle.length > 1
+                    ? `${aktiveModelle.length} Modellen`
+                    : modellDef(selectedModel).label
+                  return gesamt > 1 ? `${gesamt} Bilder mit ${wer} generieren` : `mit ${wer} generieren`
+                })()}
               </>
             )}
           </button>

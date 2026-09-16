@@ -1,81 +1,112 @@
 import Anthropic from '@anthropic-ai/sdk'
 import type { Request, Response } from 'express'
 
-const SYSTEM_PROMPT = `You are an AI image prompt engineer. You create focused, structured prompts for AI image retouching and generation tools.
+// Der Prompt-Schreiber gibt EIN JSON-Objekt aus, keinen Fliesstext.
+//
+// Warum JSON: Bildmodelle folgen strukturierten Angaben deutlich zuverlässiger
+// als Absätzen. Vor allem aber lässt sich in einem Objekt sauber sagen, WELCHES
+// Bild welche Rolle hat und was daraus übernommen werden darf — im Fliesstext
+// verschwimmt genau das, und am Ende steht die Person aus dem falschen Bild im
+// Ergebnis.
+const SYSTEM_PROMPT = `You are a prompt engineer for AI image models. You turn a brief plus
+reference photographs into ONE precise, richly specified prompt.
 
-CRITICAL RULE: Write ONLY the sections that are explicitly requested. Do NOT add Lighting, Color Grading, Background, or Output Specs unless they are in the requested changes list or the user's description explicitly asks for them.
-
-═══════════════════════════════════════════
-OUTPUT FORMAT
-═══════════════════════════════════════════
-
-1. HEADER (always)
-   Retouch: "USE THE UPLOADED PHOTO(S) AS STRICT REFERENCE BASE.\nTHIS IS A PHOTO RETOUCH — NOT A NEW IMAGE GENERATION."
-   Generation: "USE THE UPLOADED PHOTO(S) AS VISUAL STYLE REFERENCE.\nTHIS IS A NEW IMAGE GENERATION INSPIRED BY THE REFERENCE(S)."
-
-2. IMAGE INDEX (always when images present)
-   IMAGE INDEX
-   ═══════════════════════════════════════════
-   — IMAGE 1 — [filename]: [one-line description]
-   — IMAGE 2 — [filename]: [one-line description]
-
-3. LOCK SECTIONS (only when locks were set — keep them SHORT and assertive)
-
-   Object/Proportion Lock:
-   📐 SUBJECT LOCK — IMAGE [N] ⚠️
-   ═══════════════════════════════════════════
-   IMAGE [N] is the MASTER REFERENCE. The output must match IMAGE [N] in EVERY visual aspect except the one requested change.
-   Preserve EXACTLY: rendering style, lighting, shadows, camera angle, background, surface textures, composition, colors of all unchanged elements.
-   THE ONLY PERMITTED CHANGE is what is listed in CHANGES REQUESTED.
-   Any other deviation = wrong result.
-
-   Face Lock:
-   ⚠️ FACE LOCK — IMAGE [N] ⚠️
-   ═══════════════════════════════════════════
-   Preserve ALL facial features of the person in IMAGE [N] with pixel-perfect accuracy.
-   Do NOT change face shape, eyes, nose, lips, skin tone, hair, or any facial detail.
-   If the face is not 100% identical to IMAGE [N], the result is wrong.
-
-   Custom Lock:
-   🔒 CUSTOM LOCK — IMAGE [N]
-   ═══════════════════════════════════════════
-   Preserve EXACTLY: "[custom text]" — must appear identical to IMAGE [N]. No exceptions.
-
-4. REQUESTED CHANGES (always for retouch — describe what must change, clearly and specifically)
-   ✏️ CHANGES REQUESTED
-   ═══════════════════════════════════════════
-   List each requested change. Reference IMAGE numbers. Be specific about what must change and how.
-
-5. OPTIONAL SECTIONS — include ONLY when explicitly in the requested changes or user description:
-
-   Lighting (only if lighting was requested):
-   📸 LIGHTING
-   ═══════════════════════════════════════════
-   Describe the exact lighting setup required.
-
-   Color Grading (only if color change was requested):
-   🎨 COLOR GRADING
-   ═══════════════════════════════════════════
-   Describe the required color treatment and what to avoid.
-
-   Background (only if background change was requested):
-   🖼️ BACKGROUND
-   ═══════════════════════════════════════════
-   Describe the exact background change. Reference source image if applicable.
-
-6. FINAL RULE (always — one concise enforcement line)
+OUTPUT: a single JSON object. No prose before or after, no markdown fence, no commentary.
+Modern image models follow structured input far more reliably than paragraphs, and the JSON is
+shown to the user for editing — so keep keys stable and values human-readable.
 
 ═══════════════════════════════════════════
-WRITING STYLE
+SCHEMA
 ═══════════════════════════════════════════
-— Direct imperative: "Preserve exactly:" not "The AI should preserve:"
-— Em dashes (—) for list items
-— CAPS for headers and critical constraints
-— Specific where it matters — no vague terms
-— All prompts in English
-— No output resolution or quality specs (handled separately by the user)
-— No preamble or commentary — output the prompt directly
-— ALWAYS reference images by number (IMAGE 1, IMAGE 2, etc.)`
+{
+  "task": "photo_retouch" | "mockup" | "new_image",
+  "directive": "One sentence stating what the model must produce and how it must treat the
+                references. Retouch: the uploads are the base and must survive. Mockup: the
+                artwork must be applied to the object. New image: the uploads are style only.",
+  "reference_images": [
+    { "id": "IMAGE 1", "file": "<filename>", "shows": "<what is actually visible — subject,
+      framing, background, light, notable detail>", "role": "ausgang" | "ziel" | "person",
+      "how_to_use": "<what may be taken from this image, and what may not>" }
+  ],
+  "preserve": [
+    { "image": "IMAGE 1", "what": "<exact element>", "why_it_matters": "<consequence if lost>",
+      "tolerance": "pixel_exact" | "recognisable" }
+  ],
+  "changes": [
+    { "target": "<what changes>", "from": "<state in the reference>", "to": "<required state>",
+      "detail": "<how precisely — direction, amount, quality>" }
+  ],
+  "subject": { "who_or_what": "...", "pose": "...", "expression": "...", "wardrobe": "...",
+               "notes": "..." },
+  "scene": { "location": "...", "background": "...", "props": "...", "time_of_day": "..." },
+  "camera": { "shot": "<framing>", "angle": "...", "lens": "<e.g. 85mm portrait>",
+              "depth_of_field": "...", "aspect_hint": "..." },
+  "lighting": { "setup": "...", "direction": "...", "quality": "<hard/soft, contrast>",
+                "practicals": "..." },
+  "color": { "palette": "...", "grade": "...", "avoid": "..." },
+  "materials_and_texture": "<fabric, surface, print finish, grain — whatever the brief touches>",
+  "negative": ["<what must not appear — be concrete>"],
+  "output": { "single_image": true, "no_text_overlay": true, "notes": "..." }
+}
+
+═══════════════════════════════════════════
+RULES
+═══════════════════════════════════════════
+1. OMIT keys you have nothing substantial to say about. An empty or generic value is worse than
+   no key. Never write "n/a", "standard" or "as appropriate".
+2. BE LONG WHERE IT COUNTS. "changes" and "preserve" carry the result — write them out fully,
+   with direction, amount and consequence. A one-word value there is a failure.
+3. Describe EVERY attached image in "reference_images", in order, from what you actually SEE —
+   never from the filename. One entry per attached image, no exceptions and no extras. Always
+   address images as "IMAGE 1", "IMAGE 2" everywhere else in the JSON.
+4. ROLES are assigned by the user and are not yours to change:
+   — "ausgang" (SOURCE MATERIAL) is what the result is built FROM. Reproduce it faithfully:
+     shape, proportions, material, colour, every print, seam and logo. If a person is shown,
+     THAT is the person in the result.
+   — "ziel" (TARGET REFERENCE) shows how the result should LOOK — colour grade, light,
+     perspective, camera distance, framing, background, mood. Its CONTENT belongs to no one. A
+     person visible there is a stand-in, never the subject. Say so in "directive" and add a
+     "negative" entry naming the failure ("the face of the person in IMAGE n").
+   — "person" is a portrait whose face must appear in the result.
+5. IDENTITY IS DECIDED BY ROLE, NEVER BY IMAGE QUALITY. When two images show two different
+   people, the face comes from the one marked SOURCE MATERIAL or THE PERSON — even when the
+   other is sharper, larger, better lit or more flattering. This is the single most common
+   failure of this pipeline. Whenever any attached image shows a human face you MUST write a
+   "preserve" entry with tolerance "pixel_exact" naming that image and listing the facial
+   features that must survive, plus a "negative" entry forbidding the other person's face.
+6. IDENTITY IS NOT FILE QUALITY. Low resolution, JPEG blocking, colour noise and blur belong to
+   the FILE, not to the person. Instruct that detail be reconstructed cleanly along that face
+   and never borrowed from another image, and that these defects must not appear as blotches or
+   discoloured skin. Both a waxy face and a blotchy one are failed results.
+7. LOCKS are non-negotiable and belong in "preserve" with tolerance "pixel_exact":
+   — Face lock: facial geometry, proportions, skin tone, hairline, beard — the person must be
+     recognisable as the same individual.
+   — Object lock: the uploaded object is the master; everything except the requested change
+     stays identical, including rendering style, camera, background and surface texture.
+   — Custom lock: reproduce the named element exactly as it appears in the image.
+8. task "photo_retouch": the uploads are the BASE, not inspiration. Say so in "directive" and
+   restrict yourself to the requested changes. Everything else must survive untouched.
+   EXCEPTION — a target reference is attached: then framing, crop, background, wardrobe and
+   lighting are REBUILT to match it, while the subject's identity stays with the source
+   material. Do not refuse this as "not a retouch"; write the new crop, background and light out
+   in full under "changes", and the face under "preserve".
+9. task "mockup": the artwork from the upload goes ONTO the object, following its perspective,
+   curvature, folds and lighting. Never redraw, re-letter or restyle the artwork.
+10. task "new_image": the uploads are style references only — composition, mood and light, not
+    the specific people or objects, unless an image is marked "ausgang" or "person".
+11. THE USER'S INSTRUCTION GOVERNS THE SCENE. The references supply identity, object fidelity
+    and look. What happens in the picture — action, pose, props, setting — comes from the user's
+    description, even when no reference shows it. If the user asks for something none of the
+    references contain, invent it and describe it fully.
+12. Only describe lighting, colour or background when the brief asks for it, when the task is
+    "new_image", or when a change makes it unavoidable. Do not invent a creative direction the
+    user did not ask for.
+13. "negative" is for concrete failure modes of THIS brief — "second head", "warped lettering",
+    "extra fingers", "duplicated logo" — not a generic quality list.
+14. In "output" set single_image true and note that no comparison, grid or before/after layout
+    may be produced.
+15. Everything in English, values as plain readable sentences. Valid JSON: double quotes, no
+    trailing commas, no comments.`
 
 interface ImageSetting {
   name: string
@@ -117,22 +148,65 @@ function buildImageIndex(settings: ImageSetting[]): string {
 }
 
 /**
- * Die Rollenregeln im Wortlaut. Sie stehen im Auftrag an den Prompt-Schreiber,
- * damit der Prompt, den er schreibt, dieselbe Trennung kennt wie das Bildmodell
- * danach — Ausgangsmaterial liefert den Inhalt, die Zielreferenz nur Anmutung.
+ * Die Rollen, nach Rolle GRUPPIERT statt je Bild aufgezählt.
+ *
+ * Gruppiert steht die Regel einmal da und nennt alle Nummern, für die sie gilt
+ * („SOURCE MATERIAL: IMAGE 1, IMAGE 3"). Einzeln aufgezählt wiederholt sich
+ * derselbe Absatz je Bild, und das Modell liest ihn als drei verschiedene
+ * Anweisungen statt als eine, die für drei Bilder gilt.
  */
 function buildRollenBlock(settings: ImageSetting[]): string {
-  const mitRolle = settings.filter((s) => s.rolle && s.rollenRegel)
-  if (mitRolle.length === 0) return ''
-  const zeilen = mitRolle.map((s) => `— IMAGE ${settings.indexOf(s) + 1} (${ROLLEN_NAME[s.rolle!] ?? s.rolle}): ${s.rollenRegel}`)
+  if (settings.every((x) => !x.rolle)) return ''
+  const nummern = (rolle: string) => settings
+    .map((s, i) => ({ s, n: i + 1 }))
+    .filter((x) => x.s.rolle === rolle)
+
+  const zeilen: string[] = ['IMAGE ROLES — the user assigned these explicitly. Respect them exactly:']
+
+  const ausgang = nummern('ausgang')
+  const ziel = nummern('ziel')
+  const person = nummern('person')
+
+  if (ausgang.length > 0) {
+    zeilen.push(`— SOURCE MATERIAL: IMAGE ${ausgang.map((x) => x.n).join(', IMAGE ')}. `
+      + 'This is what the result is built FROM, and the only place its content may come from. '
+      + 'Reproduce it faithfully — shape, proportions, material, colour, every print and logo. '
+      + 'If a person is shown, that person IS the subject of the result: reproduce the face '
+      + 'exactly and list it under "preserve" with tolerance pixel_exact.')
+  }
+  if (ziel.length > 0) {
+    zeilen.push(`— TARGET REFERENCE: IMAGE ${ziel.map((x) => x.n).join(', IMAGE ')}. `
+      + 'This shows how the result should LOOK, not what it should contain. Take colour grade, '
+      + 'light, perspective, camera distance, framing, background and mood from it. Do NOT carry '
+      + 'over the objects, garments or people shown in it. Anyone visible here is a stand-in — '
+      + 'add a "negative" entry forbidding their face.')
+  }
+  if (person.length > 0) {
+    zeilen.push(`— THE PERSON: IMAGE ${person.map((x) => x.n).join(', IMAGE ')}. `
+      + 'This face must appear in the result. Reproduce facial proportions, skin tone, hairline, '
+      + 'haircut, beard and build exactly.')
+  }
+  if (ausgang.length > 0 && ziel.length > 0) {
+    zeilen.push('— In short: the WHAT comes from the source material, the HOW from the target '
+      + 'reference. Where they disagree — colour, shape, branding, and above all WHO IS DEPICTED '
+      + '— the source material wins, every time.')
+  }
+  zeilen.push('— Identity is decided by ROLE, never by image quality. A small, soft source '
+    + 'portrait still outranks a crisp target reference. Low resolution belongs to the FILE, not '
+    + 'to the person: reconstruct detail cleanly along that face, never borrow it from another '
+    + 'image, and never let compression artefacts show up as blotchy skin.')
+  zeilen.push('— THE USER\'S INSTRUCTION GOVERNS THE SCENE. The references supply identity, '
+    + 'object fidelity and look. What happens in the picture comes from the user\'s description, '
+    + 'even when no reference shows it.')
+  zeilen.push('— Your JSON must contain a top-level "reference_images" array with one entry per '
+    + 'attached image, in order: { "id": "IMAGE n", "file": "...", "shows": "...", "role": "...", '
+    + '"how_to_use": "..." }. Describe every attached image in real detail — what is on it and '
+    + 'what is to be taken from it.')
+
   return `\n\n═══════════════════════════════════════════
 IMAGE ROLES — HOW EACH IMAGE MAY BE USED
 ═══════════════════════════════════════════
-${zeilen.join('\n')}
-
-Never take the identity of a person, an object's shape or any branding from a
-TARGET REFERENCE. Those come from the SOURCE MATERIAL, however much sharper or
-better lit the target reference is.`
+${zeilen.join('\n')}`
 }
 
 function buildPerImageLocks(settings: ImageSetting[]): string {
@@ -184,7 +258,8 @@ function buildPerImageLocks(settings: ImageSetting[]): string {
   return blocks.join('\n\n')
 }
 
-function buildUserMessage(
+// Exportiert, damit sich der Auftragstext ohne API-Aufruf prüfen lässt.
+export function buildUserMessage(
   imageSettings: ImageSetting[],
   userDescription?: string,
   promptMode?: string,
@@ -316,14 +391,29 @@ GLOBAL CHANGES REQUESTED
 ${changeAreas!.map((f) => `— ${CHANGE_MAP[f] ?? f}`).join('\n')}`
     : ''
 
+  // Der Auftragstext ist die Absicht — die Bilder sind nur das Material. Und
+  // wenn dort „Bild 2" steht, muss zweifelsfrei feststehen, welches gemeint
+  // ist: dieselbe Nummer, die auch das Bildmodell später sieht.
   const userBlock = userDescription?.trim()
     ? `\n\n═══════════════════════════════════════════
-USER'S INTENT
+USER'S INTENT — this governs the scene
 ═══════════════════════════════════════════
 "${userDescription.trim()}"
 
-When the user references "Bild 1" / "Image 1" / "the first image" — this means IMAGE 1 from the index above.
-When the user references "Bild 2" / "Image 2" / "the second image" — this means IMAGE 2, etc.`
+RESOLVING THE USER'S IMAGE REFERENCES — do this explicitly before you write anything:
+— "Bild 1" / "Image 1" / "das erste Bild" / "the first image" = IMAGE 1 in the index above.
+— "Bild 2" / "Image 2" / "das zweite Bild" = IMAGE 2, and so on. The numbering is the one in
+  the index; it is already the numbering the image model will see.
+— "die Vorlage" / "das Ausgangsbild" / "das Original" / "the source" = the image(s) with role
+  SOURCE MATERIAL.
+— "das Ziel" / "die Zielreferenz" / "so soll es aussehen" / "the look" = the image(s) with role
+  TARGET REFERENCE.
+— "die Person" / "das Gesicht" without a number = the face in the SOURCE MATERIAL, never the
+  one in a TARGET REFERENCE.
+If a reference is genuinely ambiguous, resolve it in "directive" in one sentence, naming the
+image number you chose and why. Never silently pick one.
+Carry these resolutions through: everywhere you mention an image in the JSON, use its IMAGE
+number, never a filename and never "the other one".`
     : ''
 
   const instruction = !hasAnyLocks && !hasChange && !userDescription?.trim()
@@ -331,16 +421,29 @@ When the user references "Bild 2" / "Image 2" / "the second image" — this mean
     : ''
 
   const areas = changeAreas ?? []
-  const sectionsToInclude: string[] = []
-  if (hasAnyLocks) sectionsToInclude.push('Lock sections (only for images that have locks set)')
-  if (hasChange || userDescription?.trim()) sectionsToInclude.push('CHANGES REQUESTED section (what must change and how)')
-  if (areas.includes('lighting')) sectionsToInclude.push('📸 LIGHTING section')
-  if (areas.includes('color')) sectionsToInclude.push('🎨 COLOR GRADING section')
-  if (areas.includes('background')) sectionsToInclude.push('🖼️ BACKGROUND section')
+  // Welche Schlüssel des JSON gefüllt werden sollen. Alles andere bleibt weg —
+  // ein leerer Schlüssel ist schlechter als gar keiner.
+  const sectionsToInclude: string[] = ['"reference_images" — one entry per attached image, in order']
+  // „preserve" ist die einzige Stelle, an der etwas pixelgenau festgenagelt
+  // wird. Sobald Ausgangsmaterial vorhanden ist, MUSS sie kommen: Wer den
+  // Wunsch nur in den Auftragstext schreibt, bekam sie sonst nie, und er
+  // verwässerte zu einer Änderung unter vielen.
+  const hatAusgang = imageSettings.some((x) => x.rolle === 'ausgang' || x.rolle === 'person')
+  if (hasAnyLocks) {
+    sectionsToInclude.push('"preserve" — one entry per lock, tolerance pixel_exact')
+  } else if (hatAusgang) {
+    sectionsToInclude.push('"preserve" — everything the source material must carry into the '
+      + 'result, and the face with tolerance pixel_exact if a person is shown')
+  }
+  if (hasChange || userDescription?.trim()) sectionsToInclude.push('"changes" — what must change and how, written out fully')
+  if (areas.includes('lighting')) sectionsToInclude.push('"lighting"')
+  if (areas.includes('color')) sectionsToInclude.push('"color"')
+  if (areas.includes('background')) sectionsToInclude.push('"scene.background"')
 
-  const sectionsNote = sectionsToInclude.length > 0
-    ? `\nInclude ONLY these sections (besides header + image index):\n${sectionsToInclude.map((s) => `— ${s}`).join('\n')}\nDo NOT add any other sections.`
-    : '\nDo NOT add Lighting, Color Grading, Background, or Output Specs — they were not requested.'
+  const sectionsNote = `\nFill these keys:\n${sectionsToInclude.map((s) => `— ${s}`).join('\n')}`
+    + (areas.length === 0
+      ? '\nDo NOT fill "lighting", "color" or "scene.background" — they were not requested.'
+      : '')
 
   return `USE THE UPLOADED PHOTO(S) AS STRICT REFERENCE BASE.
 THIS IS A PHOTO RETOUCH — NOT A NEW IMAGE GENERATION.
@@ -351,14 +454,14 @@ ${imageRefSection}${rollenBlock}${locksSection}${changeSection}${userBlock}${ins
 TASK
 ═══════════════════════════════════════════
 Analyze all ${count} uploaded image(s) carefully, respecting all lock rules above.${sectionsNote}
-Reference images by IMAGE NUMBER (IMAGE 1, IMAGE 2, etc.) throughout.
 
-⛔ CRITICAL OUTPUT RULES — include these verbatim at the end of the prompt:
-— OUTPUT: ONE single image only. Do NOT generate multiple versions, side-by-side comparisons, before/after layouts, or grids. One image. Period.
-— Do NOT show the original alongside the result. The output IS the modified version.
-— If the AI tool would normally output a comparison, STOP — output only the final result.
+Write "reference_images" first — one entry per attached image, in order, describing what you
+actually see on each. Then let everything else refer back to those IMAGE numbers.
 
-Start directly with the header line — no preamble.`
+In "output" set single_image true and note that no comparison, grid or before/after layout may
+be produced. Put the concrete failure modes of THIS brief into "negative".
+
+Output the JSON object and nothing else — no preamble, no markdown fence.`
 }
 
 export async function analyzeImages(req: Request, res: Response) {
@@ -402,26 +505,50 @@ export async function analyzeImages(req: Request, res: Response) {
 
     const client = new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY })
 
-    const imageContent: (Anthropic.ImageBlockParam | Anthropic.DocumentBlockParam)[] = files.map((file) => {
+    // Jedes Bild bekommt seine Nummer und Rolle UNMITTELBAR davor. Lagen erst
+    // alle Bilder und danach der Text, musste das Modell aus der Reihenfolge
+    // erschliessen, welches Bild welches ist — bei vier Vorlagen ging das
+    // regelmässig daneben, und die Beschreibung von IMAGE 2 landete bei IMAGE 3.
+    const ROLLEN_NAME_KURZ: Record<string, string> = {
+      ausgang: 'SOURCE MATERIAL — content and identity come from here',
+      ziel: 'TARGET REFERENCE — look only, never its content or its people',
+      person: 'THE PERSON — this face must appear in the result',
+    }
+    const imageContent: Anthropic.ContentBlockParam[] = files.flatMap((file, i): Anthropic.ContentBlockParam[] => {
+      const s = imageSettings[i]
+      const rolle = s?.rolle ? ` [${ROLLEN_NAME_KURZ[s.rolle] ?? s.rolle}]` : ''
+      const marke: Anthropic.TextBlockParam = {
+        type: 'text',
+        text: `IMAGE ${i + 1} — "${s?.name ?? file.originalname}"${rolle}`,
+      }
       if (file.mimetype === 'application/pdf') {
-        return {
+        return [marke, {
           type: 'document' as const,
           source: { type: 'base64' as const, media_type: 'application/pdf' as const, data: file.buffer.toString('base64') },
-        }
+        }]
       }
-      return {
+      return [marke, {
         type: 'image' as const,
         source: {
           type: 'base64' as const,
           media_type: file.mimetype as 'image/jpeg' | 'image/png' | 'image/webp' | 'image/gif',
           data: file.buffer.toString('base64'),
         },
-      }
+      }]
     })
 
     const messageParams = {
-      max_tokens: 3000,
+      // Ein vollständiges JSON mit ausformulierten "changes" und "preserve"
+      // braucht Platz. Bei 3000 brach die Ausgabe mitten im Objekt ab, und der
+      // Nutzer bekam kaputtes JSON.
+      max_tokens: 16000,
+      // Der System-Prompt ist unveränderlich und wird zwischengespeichert.
       system: [{ type: 'text' as const, text: SYSTEM_PROMPT, cache_control: { type: 'ephemeral' as const } }],
+      // Kein `thinking`-Parameter: Bei Opus 5 ist adaptives Nachdenken
+      // voreingestellt, und genau das ist hier erwünscht — Bildanalyse und
+      // Rollenzuordnung sind die Aufgabe, bei der es sich auszahlt. (Das
+      // installierte SDK 0.39 kennt den Parameter noch nicht; sobald es
+      // aktualisiert wird, kann er ausdrücklich gesetzt werden.)
       messages: [
         {
           role: 'user' as const,
@@ -436,7 +563,7 @@ export async function analyzeImages(req: Request, res: Response) {
       ],
     }
 
-    const MODELS = ['claude-sonnet-4-6', 'claude-opus-4-6']
+    const MODELS = ['claude-opus-5', 'claude-sonnet-5']
     let lastErr: unknown
 
     for (const model of MODELS) {
