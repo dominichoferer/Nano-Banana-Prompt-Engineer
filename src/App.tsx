@@ -424,6 +424,8 @@ function JobPanel({
   const [prompt, setPrompt] = useState(() => ausVorlage(v, 'prompt', ''))
   const [analysisStatus, setAnalysisStatus] = useState<AnalysisStatus>('idle')
   const [analysisError, setAnalysisError] = useState<string | null>(null)
+  /** Woran das Modell gerade arbeitet — nur Anzeige, nie Teil des Prompts. */
+  const [denkSchritt, setDenkSchritt] = useState('')
   const [generationStatus, setGenerationStatus] = useState<GenerationStatus>('idle')
   const [generationError, setGenerationError] = useState<string | null>(null)
   const [generatedImage, setGeneratedImage] = useState<string | null>(null)
@@ -646,7 +648,7 @@ function JobPanel({
 
   const handleAnalyze = useCallback(async () => {
     if (images.length === 0 && promptMode !== 'generation') return
-    setAnalysisStatus('analyzing'); setAnalysisError(null); setPrompt('')
+    setAnalysisStatus('analyzing'); setAnalysisError(null); setPrompt(''); setDenkSchritt('')
     try {
       const compressed = await Promise.all(geordneteBilder.map((img) =>
         img.file.type === 'application/pdf' ? Promise.resolve(img.file) : compressImage(img.file)))
@@ -680,6 +682,7 @@ function JobPanel({
       const reader = response.body!.getReader()
       const decoder = new TextDecoder()
       let accumulated = ''
+      let denken = ''
       while (true) {
         const { done, value } = await reader.read()
         if (done) break
@@ -688,6 +691,13 @@ function JobPanel({
           try {
             const data = JSON.parse(line.slice(6))
             if (data.type === 'text') { accumulated += data.text; setPrompt(accumulated) }
+            // Der Denkteil gehört NICHT in den Prompt — nur in die Anzeige,
+            // damit man sieht, dass etwas vorangeht.
+            else if (data.type === 'denken') {
+              denken += data.text
+              const saetze = denken.split(/(?<=[.!?])\s+/).filter(Boolean)
+              setDenkSchritt(saetze[saetze.length - 1]?.slice(0, 160) ?? '')
+            }
             else if (data.type === 'error') throw new Error(data.error)
           } catch (e) {
             if (e instanceof Error && e.message !== 'Unexpected end of JSON input') throw e
@@ -695,9 +705,11 @@ function JobPanel({
         }
       }
       setAnalysisStatus('done')
+      setDenkSchritt('')
     } catch (err) {
       setAnalysisError(err instanceof Error ? err.message : 'Analyse fehlgeschlagen')
       setAnalysisStatus('error')
+      setDenkSchritt('')
     }
   }, [geordneteBilder, userDescription, promptMode, changeAreas, mockupType, mockupEnvironment])
 
@@ -969,6 +981,12 @@ function JobPanel({
             </>
           )}
         </button>
+
+        {analysisStatus === 'analyzing' && denkSchritt && (
+          <p className="text-[11px] font-sans text-ink-400 leading-snug px-1 animate-fade-in">
+            {denkSchritt}
+          </p>
+        )}
 
         {analysisStatus === 'error' && analysisError && (
           <div className="bg-red-50 border border-red-200 rounded-xl p-4 animate-scale-in">

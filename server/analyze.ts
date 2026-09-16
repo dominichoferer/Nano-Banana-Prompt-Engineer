@@ -108,6 +108,19 @@ RULES
 15. Everything in English, values as plain readable sentences. Valid JSON: double quotes, no
     trailing commas, no comments.`
 
+/**
+ * Wie gründlich der Prompt-Schreiber arbeitet. Die Stufe kostet Wartezeit:
+ * `high` (die Voreinstellung des Modells) ist für das Schreiben eines Prompts
+ * mehr Sorgfalt, als die Aufgabe braucht.
+ */
+const ERLAUBTER_AUFWAND = ['low', 'medium', 'high', 'xhigh', 'max'] as const
+type Aufwand = typeof ERLAUBTER_AUFWAND[number]
+const AUFWAND: Aufwand =
+  ERLAUBTER_AUFWAND.includes(process.env.ANALYZE_EFFORT as Aufwand)
+    ? (process.env.ANALYZE_EFFORT as Aufwand)
+    : 'medium'
+const ANALYZE_MODEL = process.env.ANALYZE_MODEL?.trim() || ''
+
 interface ImageSetting {
   name: string
   /**
@@ -544,11 +557,22 @@ export async function analyzeImages(req: Request, res: Response) {
       max_tokens: 16000,
       // Der System-Prompt ist unveränderlich und wird zwischengespeichert.
       system: [{ type: 'text' as const, text: SYSTEM_PROMPT, cache_control: { type: 'ephemeral' as const } }],
-      // Kein `thinking`-Parameter: Bei Opus 5 ist adaptives Nachdenken
-      // voreingestellt, und genau das ist hier erwünscht — Bildanalyse und
-      // Rollenzuordnung sind die Aufgabe, bei der es sich auszahlt. (Das
-      // installierte SDK 0.39 kennt den Parameter noch nicht; sobald es
-      // aktualisiert wird, kann er ausdrücklich gesetzt werden.)
+      // Nachdenken bleibt an — Bildanalyse und Rollenzuordnung sind genau die
+      // Aufgabe, bei der es sich auszahlt.
+      // `summarized`: Ohne das bleibt der Denkteil leer, und auf dem Bildschirm
+      // passiert minutenlang nichts — es sieht aus, als hinge das Werkzeug.
+      // So läuft mit, woran gerade gearbeitet wird. Kosten ändert das nicht,
+      // gedacht wird ohnehin.
+      thinking: { type: 'adaptive' as const, display: 'summarized' as const },
+      // ABER: nicht auf der höchsten Stufe. Ohne Angabe rechnet Opus 5 mit
+      // `high`, und das dauert bei drei, vier Bildern spürbar lange — für das
+      // Schreiben eines Prompts ist das verschwendet. `medium` liefert
+      // dasselbe Ergebnis deutlich schneller.
+      //
+      // Über ANALYZE_EFFORT umstellbar: low (am schnellsten), medium,
+      // high, xhigh, max. Wer bei einem schwierigen Auftrag mehr Sorgfalt
+      // will, setzt es hoch, ohne dass am Code etwas geändert werden muss.
+      output_config: { effort: AUFWAND },
       messages: [
         {
           role: 'user' as const,
@@ -563,7 +587,12 @@ export async function analyzeImages(req: Request, res: Response) {
       ],
     }
 
-    const MODELS = ['claude-opus-5', 'claude-sonnet-5']
+    // Voreinstellung Opus 5; Sonnet 5 ist der Rückfall, wenn Opus überlastet
+    // ist — und über ANALYZE_MODEL auch als Erstwahl setzbar, wenn Tempo vor
+    // allem anderen geht.
+    const MODELS = ANALYZE_MODEL
+      ? [ANALYZE_MODEL, 'claude-sonnet-5'].filter((m, i, a) => a.indexOf(m) === i)
+      : ['claude-opus-5', 'claude-sonnet-5']
     let lastErr: unknown
 
     for (const model of MODELS) {
@@ -579,8 +608,12 @@ export async function analyzeImages(req: Request, res: Response) {
         }
 
         for await (const event of stream) {
-          if (event.type === 'content_block_delta' && event.delta.type === 'text_delta') {
+          if (event.type !== 'content_block_delta') continue
+          if (event.delta.type === 'text_delta') {
             res.write(`data: ${JSON.stringify({ type: 'text', text: event.delta.text })}\n\n`)
+          } else if (event.delta.type === 'thinking_delta') {
+            // Getrennter Typ, damit der Denkteil NICHT im Prompt landet.
+            res.write(`data: ${JSON.stringify({ type: 'denken', text: event.delta.thinking })}\n\n`)
           }
         }
 
