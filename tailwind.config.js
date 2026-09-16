@@ -1,84 +1,96 @@
 /** @type {import('tailwindcss').Config} */
+
+// HERON-Gestaltung
+// ────────────────
+// Die Farben stammen nicht aus dem Gefühl, sondern aus der Marke: #005A9A und
+// #5A5959 sind exakt die beiden Farbwerte der Logodatei, #0064AA und #0E9BD8
+// die im Elementor-Kit von heron.at hinterlegten Blautöne.
+//
+// Die Formensprache ist bewusst rechtwinklig und flach: keine Rundungen, keine
+// farbigen Schlagschatten, keine Verläufe. Getrennt wird über Weißraum und
+// Haarlinien. Deshalb steht unten `borderRadius` durchgehend auf 0 — so werden
+// alle vorhandenen `rounded-*`-Klassen im Markup eckig, ohne dass jede einzelne
+// Zeile angefasst werden muss. Nur `full` bleibt rund, für das, was wirklich
+// ein Kreis ist (Ziffernmarken, Ladeanzeigen).
 export default {
   content: ['./index.html', './src/**/*.{js,ts,jsx,tsx}'],
   theme: {
     extend: {
       colors: {
-        banana: {
-          50:  '#FFFBEB',
-          100: '#FEF3C7',
-          200: '#FDE68A',
-          300: '#FCD34D',
-          400: '#FBBF24',
-          500: '#F59E0B',
-          600: '#D97706',
-          700: '#B45309',
-          800: '#92400E',
-          900: '#78350F',
+        // Das HERON-Blau. 500 ist der Logowert, 600 der Webwert von heron.at.
+        heron: {
+          50:  '#EAF3F9',
+          100: '#CFE4F1',
+          200: '#9DC8E3',
+          300: '#5AA5D0',
+          400: '#0E9BD8', // helles Akzentblau aus dem Kit
+          500: '#005A9A', // Logo-Blau
+          600: '#0064AA', // Web-Blau
+          700: '#004E85',
+          800: '#003A63',
+          900: '#002742',
         },
+        // Neutrale, leicht kühle Flächen statt der früheren Cremetöne.
         cream: {
-          50:  '#FAFAF7',
-          100: '#F5F3EE',
-          200: '#EDE9E0',
-          300: '#DDD8CC',
-          400: '#C8C1B3',
-          500: '#A89E8F',
+          50:  '#FAFBFC',
+          100: '#F2F4F6',
+          200: '#E4E8EC',
+          300: '#CFD5DB',
+          400: '#AEB6BE',
+          500: '#8A939C',
         },
+        // Schrift und dunkle Flächen. 500 ist das Grau der Wortmarke.
         ink: {
-          50:  '#F8F7F4',
-          100: '#EDEAE4',
-          200: '#D6D1C8',
-          300: '#B3ADA0',
-          400: '#8A8278',
-          500: '#6B6358',
-          600: '#524C42',
-          700: '#3D3830',
-          800: '#2A2620',
-          900: '#1A1714',
-        }
+          50:  '#F7F8F9',
+          100: '#EDEFF1',
+          200: '#D8DCE0',
+          300: '#AAB1B8',
+          400: '#7B8288',
+          500: '#5A5959', // Logo-Grau
+          600: '#48494B',
+          700: '#333333', // Textfarbe von heron.at
+          800: '#232528',
+          900: '#16181A',
+        },
       },
       fontFamily: {
-        display: ['Syne', 'system-ui', 'sans-serif'],
-        sans: ['Plus Jakarta Sans', 'system-ui', 'sans-serif'],
-        mono: ['JetBrains Mono', 'Fira Code', 'monospace'],
+        // Futura PT in der normalen Breite — keine Condensed. Der Kontrast im
+        // Satz entsteht allein über Schnittstärke, Versalien und Laufweite,
+        // nicht über eine zweite, schmale Schrift. Das wirkt ruhiger und
+        // moderner als der gestauchte Plakatsatz.
+        display: ['Futura PT', 'system-ui', 'sans-serif'],
+        sans: ['Futura PT', 'system-ui', 'sans-serif'],
+        // Futura hat keine dicktengleiche Fassung; für die Prompt-Ausgabe
+        // nimmt die Systemschrift den Platz ein.
+        mono: ['ui-monospace', 'SFMono-Regular', 'Menlo', 'monospace'],
+      },
+      borderRadius: {
+        none: '0', sm: '0', DEFAULT: '0', md: '0', lg: '0',
+        xl: '0', '2xl': '0', '3xl': '0',
+        full: '9999px',
       },
       animation: {
-        'aurora-1': 'aurora1 12s ease-in-out infinite',
-        'aurora-2': 'aurora2 16s ease-in-out infinite',
-        'aurora-3': 'aurora3 10s ease-in-out infinite',
-        'fade-in': 'fadeIn 0.4s ease-out',
-        'slide-up': 'slideUp 0.5s cubic-bezier(0.16, 1, 0.3, 1)',
-        'scale-in': 'scaleIn 0.3s cubic-bezier(0.16, 1, 0.3, 1)',
-        'shimmer': 'shimmer 2s linear infinite',
+        'fade-in': 'fadeIn 0.3s ease-out',
+        'slide-up': 'slideUp 0.35s cubic-bezier(0.16, 1, 0.3, 1)',
+        'scale-in': 'scaleIn 0.2s cubic-bezier(0.16, 1, 0.3, 1)',
+        'shimmer': 'shimmer 1.5s linear infinite',
         'pulse-soft': 'pulseSoft 2s ease-in-out infinite',
         'spin-slow': 'spin 3s linear infinite',
       },
       keyframes: {
-        aurora1: {
-          '0%, 100%': { transform: 'translate(0, 0) scale(1)' },
-          '33%': { transform: 'translate(40px, -30px) scale(1.08)' },
-          '66%': { transform: 'translate(-20px, 20px) scale(0.95)' },
-        },
-        aurora2: {
-          '0%, 100%': { transform: 'translate(0, 0) scale(1)' },
-          '33%': { transform: 'translate(-50px, 30px) scale(1.1)' },
-          '66%': { transform: 'translate(30px, -40px) scale(0.92)' },
-        },
-        aurora3: {
-          '0%, 100%': { transform: 'translate(0, 0) scale(1)' },
-          '50%': { transform: 'translate(25px, 35px) scale(1.06)' },
-        },
         fadeIn: {
           '0%': { opacity: '0' },
           '100%': { opacity: '1' },
         },
         slideUp: {
-          '0%': { transform: 'translateY(16px)', opacity: '0' },
+          '0%': { transform: 'translateY(10px)', opacity: '0' },
           '100%': { transform: 'translateY(0)', opacity: '1' },
         },
+        // Kein Hochskalieren mehr — das Aufploppen war ein gutes Stück des
+        // „KI-Looks". Nur noch ein ruhiges Einblenden.
         scaleIn: {
-          '0%': { transform: 'scale(0.95)', opacity: '0' },
-          '100%': { transform: 'scale(1)', opacity: '1' },
+          '0%': { opacity: '0' },
+          '100%': { opacity: '1' },
         },
         shimmer: {
           '0%': { backgroundPosition: '-200% 0' },
@@ -90,17 +102,11 @@ export default {
         },
       },
       boxShadow: {
-        'card': '0 1px 3px rgba(0,0,0,0.06), 0 4px 16px rgba(0,0,0,0.06)',
-        'card-hover': '0 4px 8px rgba(0,0,0,0.08), 0 16px 32px rgba(0,0,0,0.1)',
-        'banana': '0 4px 24px rgba(245,158,11,0.25), 0 1px 4px rgba(245,158,11,0.1)',
-        'banana-lg': '0 8px 40px rgba(245,158,11,0.35), 0 2px 8px rgba(245,158,11,0.15)',
-        'inner-banana': 'inset 0 1px 0 rgba(255,255,255,0.15)',
+        // Zwei sehr zurückhaltende, neutrale Schatten. Die farbigen
+        // Leuchtschatten sind ersatzlos entfallen.
+        'card': '0 1px 2px rgba(22,24,26,0.06)',
+        'card-hover': '0 2px 8px rgba(22,24,26,0.10)',
       },
-      backgroundImage: {
-        'banana-gradient': 'linear-gradient(135deg, #FBBF24 0%, #F59E0B 50%, #D97706 100%)',
-        'banana-gradient-soft': 'linear-gradient(135deg, #FEF3C7 0%, #FDE68A 100%)',
-        'cream-gradient': 'linear-gradient(160deg, #FAFAF7 0%, #F5F3EE 100%)',
-      }
     },
   },
   plugins: [],

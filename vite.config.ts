@@ -7,7 +7,10 @@ export default defineConfig({
     port: 5173,
     proxy: {
       '/api': {
-        target: 'http://localhost:3001',
+        // Fest verdrahtet kollidiert das mit jedem zweiten Projekt, das
+        // ebenfalls auf 3001 hört. API_PORT setzen, dann ziehen Server
+        // (PORT) und Proxy gemeinsam um.
+        target: `http://localhost:${process.env.API_PORT ?? '3001'}`,
         changeOrigin: true,
       }
     }

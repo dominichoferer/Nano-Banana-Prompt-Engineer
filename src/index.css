@@ -1,3 +1,33 @@
+/* ── Futura PT ────────────────────────────────────────────────────────────
+   Die Hausschrift. Liegt selbst gehostet unter public/fonts/, damit die
+   Darstellung nicht von einem fremden Dienst abhängt — Google Fonts wird
+   dadurch gar nicht mehr gebraucht.
+
+   Es werden bewusst nur zwei Schnitte ausgeliefert — Book und Demi. Light und
+   Kursiv wurden nirgends benutzt und hätten den Auslieferungsumfang nur
+   vergrössert.
+
+   Futura PT hat keinen echten 700er Schnitt. Demi deckt deshalb 500 bis 700 ab:
+   Sonst rechnet der Browser bei `font-bold` selbst eine fette Fassung aus, und
+   die sieht verquollen aus.
+
+   ACHTUNG Lizenz: Diese Dateien werden mit dem Deployment ausgeliefert und
+   sind dann unter /fonts/ öffentlich abrufbar. Eine reine Desktop-Lizenz
+   deckt das nicht ab — siehe Hinweis in der Übergabe. */
+@font-face {
+  font-family: 'Futura PT';
+  src: url('/fonts/FuturaPT-Book.otf') format('opentype');
+  font-weight: 400;
+  font-style: normal;
+  font-display: swap;
+}
+@font-face {
+  font-family: 'Futura PT';
+  src: url('/fonts/FuturaPT-Demi.otf') format('opentype');
+  font-weight: 500 700;
+  font-style: normal;
+  font-display: swap;
+}
 @tailwind base;
 @tailwind components;
 @tailwind utilities;
@@ -12,136 +42,124 @@
   }
 
   body {
-    @apply bg-cream-50 text-ink-900 font-sans antialiased;
+    @apply bg-cream-50 text-ink-700 font-sans antialiased;
     min-height: 100dvh;
   }
 
   ::-webkit-scrollbar {
-    width: 5px;
-    height: 5px;
+    width: 6px;
+    height: 6px;
   }
   ::-webkit-scrollbar-track {
     @apply bg-cream-100;
   }
   ::-webkit-scrollbar-thumb {
-    @apply bg-cream-300 rounded-full;
+    @apply bg-cream-300;
   }
   ::-webkit-scrollbar-thumb:hover {
-    @apply bg-banana-400;
+    @apply bg-heron-500;
   }
 }
 
 @layer components {
 
-  /* ── Cards ── */
+  /* ── Flächen ───────────────────────────────────────────────────────────
+     Rechtwinklige, flächige Blöcke. Kein Rahmen rundherum und kein Schatten:
+     Eine Haarlinie oben genügt, um einen Block abzusetzen — das ist ruhiger
+     und sieht weniger nach Baukasten aus als eine Kachel mit Schlagschatten. */
   .card {
-    @apply bg-white border border-cream-200 rounded-2xl shadow-card;
+    @apply bg-white border-t-2 border-cream-200;
   }
 
   .card-elevated {
-    @apply bg-white border border-cream-200 rounded-2xl shadow-card-hover;
+    @apply bg-white border-t-2 border-heron-500;
   }
 
-  /* ── Buttons ── */
+  /* ── Schaltflächen ──
+     Flach gefüllt, kein Verlauf, kein Anheben beim Überfahren. Der Zustand
+     wird allein über die Flächenfarbe gezeigt. */
   .btn-primary {
-    @apply relative bg-banana-gradient text-white font-display font-semibold
-           px-6 py-3.5 rounded-xl shadow-banana
+    @apply bg-heron-500 text-white font-display font-bold uppercase tracking-wider text-base
+           px-6 py-3.5
            flex items-center gap-2.5 justify-center
-           transition-all duration-200
-           hover:shadow-banana-lg hover:-translate-y-0.5
-           active:translate-y-0 active:shadow-banana active:scale-[0.98]
-           disabled:opacity-40 disabled:cursor-not-allowed
-           disabled:hover:translate-y-0 disabled:hover:shadow-banana;
-    overflow: hidden;
-  }
-
-  .btn-primary::before {
-    content: '';
-    @apply absolute inset-0 bg-white/10 opacity-0 transition-opacity duration-200;
-  }
-  .btn-primary:hover:not(:disabled)::before {
-    @apply opacity-100;
+           transition-colors duration-150
+           hover:bg-heron-600
+           active:bg-heron-700
+           disabled:bg-cream-200 disabled:text-ink-300 disabled:cursor-not-allowed;
   }
 
   .btn-secondary {
     @apply bg-white text-ink-700 font-sans font-medium
-           px-5 py-3 rounded-xl border border-cream-200 shadow-card
+           px-5 py-3 border border-cream-300
            flex items-center gap-2 justify-center
-           transition-all duration-200
-           hover:border-banana-300 hover:text-ink-900 hover:shadow-card-hover hover:-translate-y-0.5
-           active:translate-y-0 active:scale-[0.98]
-           disabled:opacity-40 disabled:cursor-not-allowed;
+           transition-colors duration-150
+           hover:border-heron-500 hover:text-heron-600
+           disabled:bg-cream-100 disabled:text-ink-300 disabled:cursor-not-allowed;
   }
 
   .btn-ghost {
-    @apply text-ink-500 hover:text-ink-900 hover:bg-cream-100
-           px-3 py-2 rounded-lg font-sans text-sm
-           transition-all duration-150 flex items-center gap-2
-           active:scale-[0.97];
+    @apply text-ink-500 hover:text-heron-600
+           px-3 py-2 font-sans text-sm
+           transition-colors duration-150 flex items-center gap-2;
   }
 
-  /* ── Inputs ── */
+  /* ── Eingabefelder ──
+     Beim Fokus wechselt nur die Rahmenfarbe. Kein Ring, kein Leuchten. */
   .input-field {
-    @apply bg-white border border-cream-200 rounded-xl px-4 py-3
-           text-ink-900 placeholder-ink-300 font-sans text-sm
-           shadow-card
-           focus:outline-none focus:border-banana-400 focus:ring-2 focus:ring-banana-200
-           transition-all duration-200;
+    @apply bg-white border border-cream-300 px-4 py-3
+           text-ink-800 placeholder-ink-300 font-sans text-sm
+           focus:outline-none focus:border-heron-500
+           transition-colors duration-150;
   }
 
-  /* ── Area Chips ── */
+  /* ── Marken (Chips) ── */
   .chip {
-    @apply flex items-center gap-1.5 px-3 py-1.5 rounded-lg border text-xs font-sans font-medium
-           transition-all duration-150 select-none cursor-pointer;
+    @apply inline-flex items-center gap-1.5 px-3 py-2.5 sm:px-2.5 sm:py-1.5
+           font-sans text-[11px] font-medium uppercase tracking-wide
+           border transition-colors duration-150 select-none cursor-pointer;
   }
 
   .chip-lock {
-    @apply chip border-cream-200 bg-white text-ink-500 shadow-card
-           hover:border-blue-300 hover:text-blue-700 hover:bg-blue-50;
+    @apply chip border-cream-300 bg-white text-ink-500
+           hover:border-ink-700 hover:text-ink-800;
   }
   .chip-lock-active {
-    @apply chip border-blue-300 bg-blue-50 text-blue-700 shadow-card;
+    @apply chip border-ink-700 bg-ink-700 text-white;
   }
 
   .chip-change {
-    @apply chip border-cream-200 bg-white text-ink-500 shadow-card
-           hover:border-banana-300 hover:text-banana-700 hover:bg-banana-50;
+    @apply chip border-cream-300 bg-white text-ink-500
+           hover:border-heron-500 hover:text-heron-600;
   }
   .chip-change-active {
-    @apply chip border-banana-300 bg-banana-50 text-banana-700 shadow-card;
+    @apply chip border-heron-500 bg-heron-500 text-white;
   }
 
-  /* ── Labels ── */
+  /* ── Beschriftungen ── */
   .label-step {
-    @apply text-[10px] font-display font-bold uppercase tracking-widest text-banana-500;
+    @apply text-[11px] font-display font-bold uppercase tracking-[0.2em] text-heron-500;
   }
   .label-section {
-    @apply text-xs font-sans font-semibold uppercase tracking-widest text-ink-400;
+    @apply text-xs font-display font-bold uppercase tracking-[0.14em] text-ink-500;
   }
 
-  /* ── Mode Toggle ── */
+  /* ── Moduswahl ──
+     Aktiv ist die Fläche blau gefüllt, inaktiv bleibt es reiner Text. */
   .mode-btn {
-    @apply flex-1 flex items-center justify-center gap-2 py-3 px-4 rounded-xl
-           font-sans font-medium text-sm transition-all duration-200;
+    @apply flex-1 flex flex-col sm:flex-row items-center justify-center gap-1 sm:gap-2
+           py-2.5 sm:py-3 px-1.5 sm:px-4 text-center leading-none
+           font-display font-bold uppercase tracking-wide text-[11px] sm:text-sm
+           transition-colors duration-150;
   }
   .mode-btn-active {
-    @apply bg-white text-ink-900 shadow-card border border-cream-200;
+    @apply bg-heron-500 text-white;
   }
   .mode-btn-inactive {
-    @apply text-ink-400 hover:text-ink-700;
+    @apply text-ink-400 hover:text-ink-800 hover:bg-cream-100;
   }
 }
 
-/* ── Aurora background blobs ── */
-.aurora-blob {
-  position: absolute;
-  border-radius: 50%;
-  filter: blur(60px);
-  pointer-events: none;
-  will-change: transform;
-}
-
-/* ── Typing cursor ── */
+/* ── Schreibmarke im Prompt-Feld ── */
 @keyframes blink {
   0%, 100% { opacity: 1; }
   50% { opacity: 0; }
@@ -149,51 +167,45 @@
 
 .typing-cursor::after {
   content: '▋';
-  color: #F59E0B;
+  color: #005A9A;
   animation: blink 1s step-end infinite;
   margin-left: 1px;
 }
 
-/* ── Drag-over drop zone ── */
+/* ── Ablagefläche beim Darüberziehen ──
+     Farbwechsel statt Leuchtring. */
 .drop-zone-active {
-  border-color: #F59E0B !important;
-  background-color: #FFFBEB !important;
-  box-shadow: 0 0 0 4px rgba(245, 158, 11, 0.12) !important;
+  border-color: #005A9A !important;
+  background-color: #EAF3F9 !important;
 }
 
-/* ── Gradient border on drop zone hover ── */
-.drop-zone-gradient {
-  position: relative;
-}
-
-/* ── Shimmer loading ── */
+/* ── Ladeflimmern ── */
 .shimmer-bg {
-  background: linear-gradient(90deg, #F5F3EE 25%, #EDE9E0 50%, #F5F3EE 75%);
+  background: linear-gradient(90deg, #F2F4F6 25%, #E4E8EC 50%, #F2F4F6 75%);
   background-size: 200% 100%;
   animation: shimmer 1.5s linear infinite;
 }
 
-/* ── Prose monospace output ── */
+/* ── Prompt-Ausgabe ── */
 .prompt-output {
   @apply font-mono text-xs leading-relaxed text-ink-800;
   white-space: pre-wrap;
   word-break: break-word;
 }
 
-/* ── Image upload thumbnail ── */
+/* ── Überlagerung auf Bildvorschauen ── */
 .thumb-overlay {
   @apply absolute inset-0 bg-ink-900/60 opacity-0 group-hover:opacity-100
          transition-opacity duration-200 flex flex-col items-center justify-center gap-2;
-  border-radius: inherit;
 }
 
-/* ── Focus ring for accessibility ── */
+/* ── Sichtbarer Fokus für die Tastaturbedienung ──
+     Bleibt bewusst erhalten: Das ist kein Zierrat, sondern Bedienbarkeit. */
 *:focus-visible {
-  outline: 2px solid #F59E0B;
+  outline: 2px solid #005A9A;
   outline-offset: 2px;
 }
 
-/* ── Smooth scroll restoration ── */
 @media (prefers-reduced-motion: reduce) {
   *, *::before, *::after {
     animation-duration: 0.01ms !important;

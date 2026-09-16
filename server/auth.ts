@@ -33,20 +33,73 @@ export function verifyPassword(plain: string, stored: string): boolean {
 
 interface AuthUser { email: string; hash: string }
 
+/**
+ * In welchem Zustand ist die Anmeldung?
+ *
+ *  aktiv  — Benutzer und Geheimnis stehen, es wird geprüft.
+ *  aus    — beides fehlt vollständig. Gewollt beim lokalen Entwickeln.
+ *  kaputt — es wurde etwas gesetzt, aber es taugt nicht: kaputtes JSON, kein
+ *           Array, leere Liste, Einträge ohne scrypt$-Hash, fehlendes Geheimnis.
+ *
+ * Der Unterschied zwischen „aus" und „kaputt" ist der Kern dieser Datei.
+ * Vorher gab es ihn nicht: Ein Tippfehler in AUTH_USERS führte zu einer leeren
+ * Benutzerliste, damit galt die Anmeldung als abgeschaltet, und requireAuth
+ * liess **jede** Anfrage durch. Die Seite stand offen im Netz und jeder fremde
+ * Aufruf ging auf das API-Kontingent — ohne eine einzige Fehlermeldung. Eine
+ * falsch geschriebene Umgebungsvariable darf niemals die Tür öffnen.
+ */
+export type AuthLage = 'aktiv' | 'aus' | 'kaputt'
+
 let cachedUsers: AuthUser[] | null = null
+let usersKaputt = false
 function getUsers(): AuthUser[] {
   if (cachedUsers) return cachedUsers
-  const raw = process.env.AUTH_USERS
+  const raw = process.env.AUTH_USERS?.trim()
   if (!raw) { cachedUsers = []; return cachedUsers }
   try {
     const parsed = JSON.parse(raw) as AuthUser[]
-    cachedUsers = parsed.map((u) => ({ email: u.email.toLowerCase().trim(), hash: u.hash }))
+    if (!Array.isArray(parsed)) throw new Error('kein Array')
+    const sauber = parsed
+      .filter((u) => u && typeof u.email === 'string' && typeof u.hash === 'string' && u.hash.startsWith('scrypt$'))
+      .map((u) => ({ email: u.email.toLowerCase().trim(), hash: u.hash }))
+    if (sauber.length === 0) throw new Error('keine brauchbaren Einträge')
+    cachedUsers = sauber
     return cachedUsers
-  } catch {
-    console.error('AUTH_USERS env var is not valid JSON — auth disabled')
+  } catch (e) {
+    // Gesetzt, aber unbrauchbar: als kaputt merken, NICHT als abgeschaltet.
+    usersKaputt = true
+    console.error('[auth] AUTH_USERS ist gesetzt, aber unbrauchbar '
+      + `(${e instanceof Error ? e.message : 'Fehler'}) — Zugriff wird gesperrt`)
     cachedUsers = []
     return cachedUsers
   }
+}
+
+/** Läuft das hier auf Vercel? Dort ist eine offene Seite nie hinnehmbar. */
+function istBetrieb(): boolean {
+  return process.env.VERCEL === '1' || process.env.NODE_ENV === 'production'
+}
+
+export function authLage(): AuthLage {
+  const users = getUsers()
+  const secret = getSecret()
+  const etwasGesetzt = Boolean(process.env.AUTH_USERS?.trim()) || Boolean(secret)
+  if (usersKaputt) return 'kaputt'
+  if (users.length > 0 && !secret) {
+    console.error('[auth] AUTH_USERS steht, aber AUTH_SECRET fehlt — Zugriff wird gesperrt')
+    return 'kaputt'
+  }
+  if (users.length === 0 && etwasGesetzt) {
+    console.error('[auth] Anmeldung halb konfiguriert — Zugriff wird gesperrt')
+    return 'kaputt'
+  }
+  if (users.length === 0) return 'aus'
+  // Kurzes Geheimnis ist ein Mangel, aber kein Grund zur Aussperrung mitten im
+  // Betrieb — deshalb laut warnen statt sperren.
+  if (secret && secret.length < 32) {
+    console.warn(`[auth] AUTH_SECRET ist nur ${secret.length} Zeichen lang — mindestens 32 empfohlen`)
+  }
+  return 'aktiv'
 }
 
 // ── Session token (HMAC-signed cookie, no JWT lib) ──────────────────────────
@@ -99,7 +152,16 @@ function parseCookies(header: string | undefined): Record<string, string> {
   const out: Record<string, string> = {}
   for (const part of header.split(';')) {
     const [k, ...v] = part.trim().split('=')
-    if (k) out[k] = decodeURIComponent(v.join('='))
+    if (!k) continue
+    const roh = v.join('=')
+    // decodeURIComponent wirft bei ungültigen Prozentzeichen ("%E0%A4%A").
+    // Ungefangen wurde daraus ein 500er, den jeder Fremde mit einem einzigen
+    // Kopfzeilenwert auslösen konnte. Ein unlesbares Cookie ist einfach keines.
+    try {
+      out[k] = decodeURIComponent(roh)
+    } catch {
+      out[k] = roh
+    }
   }
   return out
 }
@@ -120,13 +182,38 @@ function buildCookie(value: string, maxAgeSec: number): string {
 // ── Public: is auth enabled? ─────────────────────────────────────────────────
 
 export function isAuthEnabled(): boolean {
-  return getUsers().length > 0 && !!getSecret()
+  return authLage() === 'aktiv'
 }
 
 // ── Middleware ───────────────────────────────────────────────────────────────
 
 export const requireAuth: RequestHandler = (req, res, next) => {
-  if (!isAuthEnabled()) return next()
+  const lage = authLage()
+
+  // Halb oder falsch konfiguriert: zu. Immer, überall. Lieber eine Seite, die
+  // nicht funktioniert, als eine, die offen im Netz steht und fremde Aufrufe
+  // auf das API-Kontingent bucht.
+  if (lage === 'kaputt') {
+    res.status(503).json({
+      error: 'Anmeldung ist fehlerhaft konfiguriert. Der Zugriff bleibt gesperrt, '
+        + 'bis AUTH_USERS und AUTH_SECRET stimmen.',
+    })
+    return
+  }
+
+  // Gar nicht konfiguriert: lokal beim Entwickeln in Ordnung, im Betrieb nie.
+  if (lage === 'aus') {
+    if (istBetrieb()) {
+      console.error('[auth] Kein AUTH_USERS/AUTH_SECRET im Betrieb — Zugriff gesperrt')
+      res.status(503).json({
+        error: 'Anmeldung ist nicht eingerichtet. Der Zugriff bleibt gesperrt, bis '
+          + 'AUTH_USERS und AUTH_SECRET gesetzt sind.',
+      })
+      return
+    }
+    return next()
+  }
+
   const cookies = parseCookies(req.headers.cookie)
   const session = verifyToken(cookies[SESSION_COOKIE])
   if (!session) {
@@ -137,11 +224,66 @@ export const requireAuth: RequestHandler = (req, res, next) => {
   next()
 }
 
+// ── Bremse gegen das Durchprobieren von Passwörtern ──────────────────────────
+//
+// scrypt kostet rund 100 ms je Versuch, das allein bremst nur den Einzelnen.
+// Wer parallel anfragt, probiert trotzdem Tausende Passwörter — und jeder
+// Versuch kostet Rechenzeit auf der Function.
+//
+// Grenze dieser Lösung, damit sie niemand überschätzt: Der Zähler lebt im
+// Arbeitsspeicher der jeweiligen Instanz. Vercel startet mehrere davon, und
+// jede kalte Instanz beginnt bei null. Das ist eine Bremse, keine Mauer. Wer
+// es wirklich dicht braucht, hängt einen gemeinsamen Speicher (KV, Redis) oder
+// Vercel Firewall davor.
+// Zwei Grenzen, mit Absicht verschieden hoch:
+//   Herkunft  — eng. Wer von einer Adresse achtmal danebenliegt, wartet.
+//   Konto     — weit. Sonst könnte ein Fremder dich aussperren, indem er
+//               einfach dauernd falsche Passwörter zu deiner Adresse schickt.
+//               Die Kontogrenze soll nur verteiltes Durchprobieren stoppen,
+//               nicht als Waffe gegen den rechtmässigen Nutzer taugen.
+const VERSUCHE_MAX_HERKUNFT = 8
+const VERSUCHE_MAX_KONTO = 40
+const VERSUCHE_FENSTER_MS = 15 * 60 * 1000
+const versuche = new Map<string, { anzahl: number; bis: number }>()
+
+function herkunft(req: Request): string {
+  const fwd = req.headers['x-forwarded-for']
+  const roh = Array.isArray(fwd) ? fwd[0] : fwd
+  return (roh?.split(',')[0].trim()) || req.socket?.remoteAddress || 'unbekannt'
+}
+
+function gesperrt(schluessel: string): number {
+  const e = versuche.get(schluessel)
+  if (!e) return 0
+  if (Date.now() > e.bis) { versuche.delete(schluessel); return 0 }
+  const grenze = schluessel.startsWith('ip:') ? VERSUCHE_MAX_HERKUNFT : VERSUCHE_MAX_KONTO
+  return e.anzahl >= grenze ? Math.ceil((e.bis - Date.now()) / 1000) : 0
+}
+
+function merkeFehlversuch(schluessel: string): void {
+  const jetzt = Date.now()
+  const e = versuche.get(schluessel)
+  if (!e || jetzt > e.bis) {
+    versuche.set(schluessel, { anzahl: 1, bis: jetzt + VERSUCHE_FENSTER_MS })
+  } else {
+    e.anzahl++
+    e.bis = jetzt + VERSUCHE_FENSTER_MS
+  }
+  // Die Karte darf nicht unbegrenzt wachsen.
+  if (versuche.size > 5000) {
+    for (const [k, v] of versuche) if (jetzt > v.bis) versuche.delete(k)
+  }
+}
+
 // ── Route handlers ───────────────────────────────────────────────────────────
 
 export function handleLogin(req: Request, res: Response): void {
   if (!isAuthEnabled()) {
-    res.status(503).json({ error: 'Auth nicht konfiguriert' })
+    res.status(503).json({
+      error: authLage() === 'kaputt'
+        ? 'Anmeldung ist fehlerhaft konfiguriert — bitte AUTH_USERS und AUTH_SECRET prüfen.'
+        : 'Auth nicht konfiguriert',
+    })
     return
   }
   const { email, password } = (req.body ?? {}) as { email?: string; password?: string }
@@ -150,14 +292,33 @@ export function handleLogin(req: Request, res: Response): void {
     return
   }
   const normalized = email.toLowerCase().trim()
+
+  // Nach Herkunft UND nach Benutzername bremsen: Ersteres hält einen einzelnen
+  // Angreifer auf, Letzteres schützt ein bestimmtes Konto auch dann, wenn die
+  // Versuche aus vielen Richtungen kommen.
+  const schluessel = [`ip:${herkunft(req)}`, `user:${normalized}`]
+  for (const k of schluessel) {
+    const rest = gesperrt(k)
+    if (rest > 0) {
+      res.status(429)
+        .setHeader('Retry-After', String(rest))
+        .json({ error: `Zu viele Fehlversuche. Bitte in ${Math.ceil(rest / 60)} Minuten erneut versuchen.` })
+      return
+    }
+  }
+
   const user = getUsers().find((u) => u.email === normalized)
   // Always run scrypt to avoid timing leak of which emails exist
   const dummy = 'scrypt$16384$8$1$AAAAAAAAAAAAAAAAAAAAAA==$AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA'
   const ok = verifyPassword(password, user?.hash ?? dummy) && !!user
   if (!ok) {
+    for (const k of schluessel) merkeFehlversuch(k)
+    console.warn(`[auth] Fehlversuch für "${normalized}" von ${herkunft(req)}`)
     res.status(401).json({ error: 'Ungültige Anmeldedaten' })
     return
   }
+  // Nach erfolgreicher Anmeldung ist die Bremse für dieses Konto gelöst.
+  for (const k of schluessel) versuche.delete(k)
   const exp = Math.floor(Date.now() / 1000) + SESSION_TTL_SEC
   const token = signToken({ email: normalized, exp })
   res.setHeader('Set-Cookie', buildCookie(token, SESSION_TTL_SEC))
@@ -170,7 +331,16 @@ export function handleLogout(_req: Request, res: Response): void {
 }
 
 export function handleMe(req: Request, res: Response): void {
+  if (authLage() === 'kaputt') {
+    res.status(503).json({ authEnabled: true, error: 'Anmeldung ist fehlerhaft konfiguriert' })
+    return
+  }
   if (!isAuthEnabled()) {
+    // Im Betrieb ist eine abgeschaltete Anmeldung selbst der Fehler.
+    if (istBetrieb()) {
+      res.status(503).json({ authEnabled: true, error: 'Anmeldung ist nicht eingerichtet' })
+      return
+    }
     res.json({ authEnabled: false })
     return
   }

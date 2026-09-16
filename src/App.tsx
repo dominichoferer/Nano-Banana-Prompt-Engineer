@@ -1,9 +1,13 @@
-import { useState, useCallback, useEffect, useRef } from 'react'
+import { useState, useCallback, useEffect, useMemo, useRef } from 'react'
 import * as pdfjsLib from 'pdfjs-dist'
 import PromptDisplay from './components/PromptDisplay'
 import GeneratedImage from './components/GeneratedImage'
-import type { UploadedImage, AnalysisStatus, GenerationStatus, PromptMode, FocusArea, MockupType, GenModel, OpenAIFormat } from './types'
-import { CHANGE_AREAS, MOCKUP_TYPES, GEN_MODELS, OPENAI_FORMATS, ratiosForModel } from './types'
+import type { UploadedImage, AnalysisStatus, GenerationStatus, PromptMode, FocusArea, MockupType, GenModel, GenFamilie, OpenAIFormat } from './types'
+import { CHANGE_AREAS, MOCKUP_TYPES, GEN_MODELS, GEN_FAMILIEN, OPENAI_FORMATS, ratiosForModel,
+  STANDARD_MODELL, istGpt, familieVon, kannTransparenz, modellDef } from './types'
+import type { RefRolle, RefBild } from './referenzen'
+import { ROLLEN_REGEL, baueLegende, begrenze } from './referenzen'
+import { willGesichtLock, identitaetsKlausel } from './identitaet'
 
 pdfjsLib.GlobalWorkerOptions.workerSrc = `https://unpkg.com/pdfjs-dist@${pdfjsLib.version}/build/pdf.worker.min.mjs`
 
@@ -22,13 +26,25 @@ async function renderPdfFirstPageToFile(file: File): Promise<File> {
   )
 }
 
+// Bis hierher lief JEDES hochgeladene Bild durch JPEG 0.85 — auch ein 12-KB-
+// Thumbnail, das dadurch weiter verlor. Genau solche Artefakte hält das
+// Bildmodell später für Hautmerkmale und malt sie gross aus. Wer ohnehin unter
+// der Maximalkante liegt und klein genug ist, wird jetzt unverändert
+// durchgelassen.
+const KOMPRESS_MAXKANTE = 1600
+const KOMPRESS_SCHONFRIST_BYTES = 900 * 1024
+
 function compressImage(file: File): Promise<File> {
   return new Promise((resolve) => {
     const img = new Image()
     const url = URL.createObjectURL(file)
     img.onload = () => {
       URL.revokeObjectURL(url)
-      const MAX = 1600
+      const MAX = KOMPRESS_MAXKANTE
+      if (Math.max(img.width, img.height) <= MAX && file.size <= KOMPRESS_SCHONFRIST_BYTES) {
+        resolve(file)
+        return
+      }
       const scale = Math.min(1, MAX / Math.max(img.width, img.height))
       const w = Math.round(img.width * scale)
       const h = Math.round(img.height * scale)
@@ -52,6 +68,7 @@ function createUploadedImage(file: File): UploadedImage {
     preview: URL.createObjectURL(file),
     name: file.name,
     size: file.size,
+    rolle: 'ausgang',
     faceLock: false,
     objectLock: false,
     customLock: '',
@@ -69,7 +86,7 @@ function ImageCard({
   img, index, onRemove, onUpdate, disabled,
 }: {
   img: UploadedImage; index: number; onRemove: () => void
-  onUpdate: (field: 'faceLock' | 'objectLock' | 'customLock', value: boolean | string) => void
+  onUpdate: (field: 'faceLock' | 'objectLock' | 'customLock' | 'rolle', value: boolean | string) => void
   disabled?: boolean
 }) {
   return (
@@ -88,13 +105,41 @@ function ImageCard({
               <img src={img.preview} alt={img.name} className="w-full h-full object-cover" />
             )}
           </div>
-          <div className="absolute -top-1.5 -left-1.5 bg-banana-500 text-white text-[10px] font-display font-bold w-5 h-5 rounded-full flex items-center justify-center shadow-banana">
+          <div className="absolute -top-1.5 -left-1.5 bg-heron-500 text-white text-[10px] font-display font-bold w-5 h-5 rounded-full flex items-center justify-center">
             {index + 1}
           </div>
         </div>
         <div className="flex-1 min-w-0 pt-0.5">
           <p className="text-ink-700 text-xs font-sans font-medium truncate">{img.name}</p>
-          <p className="text-ink-400 text-[11px] font-sans mt-0.5">{formatBytes(img.size)}</p>
+          <p className="text-ink-400 text-[11px] font-sans mt-0.5">
+            {formatBytes(img.size)}
+            {img.breite && img.hoehe ? ` · ${img.breite}×${img.hoehe}` : ''}
+          </p>
+          {/* Auflösungshinweis gehört VOR die Generierung — hinterher ist das
+              Bild bezahlt. Die kurze Kante entscheidet, nicht die Fläche. */}
+          {img.breite && img.hoehe && Math.min(img.breite, img.hoehe) < 900 && (
+            <p className={`text-[10px] font-sans mt-0.5 ${Math.min(img.breite, img.hoehe) < 500 ? 'text-red-600' : 'text-heron-600'}`}>
+              {Math.min(img.breite, img.hoehe) < 500
+                ? 'Sehr klein — Details werden erfunden, Gesichter können fleckig werden.'
+                : 'Knapp — für scharfe Details lieber eine größere Fassung.'}
+            </p>
+          )}
+          {/* Rolle: Ausgangsmaterial wird originalgetreu übernommen, die
+              Zielreferenz gibt nur Anmutung vor. Ohne diese Trennung nimmt das
+              Bildmodell Inhalte (und Gesichter) aus dem falschen Bild. */}
+          <div className="flex gap-1 mt-2">
+            {([
+              ['ausgang', 'Ausgangsmaterial', 'Woraus etwas entsteht — wird originalgetreu übernommen, samt Gesicht'],
+              ['ziel', 'Zielreferenz', 'Wie das Ergebnis aussehen soll: Farbe, Licht, Perspektive, Ausschnitt — NICHT die Objekte oder Personen daraus'],
+            ] as Array<[RefRolle, string, string]>).map(([r, beschriftung, titel]) => (
+              <button key={r} type="button" onClick={() => onUpdate('rolle', r)} disabled={disabled}
+                title={titel}
+                className={`px-2 py-1 rounded-lg text-[10px] font-sans font-medium transition-all
+                  ${img.rolle === r ? 'bg-heron-500 text-white shadow-sm' : 'bg-cream-100 text-ink-500 hover:bg-cream-200'}`}>
+                {beschriftung}
+              </button>
+            ))}
+          </div>
           <div className="flex flex-wrap gap-1.5 mt-2">
             <button type="button" onClick={() => onUpdate('faceLock', !img.faceLock)} disabled={disabled}
               title="Alle Gesichtsmerkmale pixelgenau erhalten"
@@ -126,11 +171,11 @@ function ImageCard({
       </div>
       <div className="relative">
         <div className="absolute left-3 top-1/2 -translate-y-1/2 flex items-center gap-1 pointer-events-none">
-          <svg className="w-3 h-3 text-blue-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+          <svg className="w-3 h-3 text-heron-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
             <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2.5}
               d="M12 15v2m-6 4h12a2 2 0 002-2v-6a2 2 0 00-2-2H6a2 2 0 00-2 2v6a2 2 0 002 2zm10-10V7a4 4 0 00-8 0v4h8z" />
           </svg>
-          <span className="text-blue-500 text-[11px] font-display font-bold">Lock:</span>
+          <span className="text-heron-600 text-[11px] font-display font-bold">Lock:</span>
         </div>
         <input type="text" value={img.customLock} onChange={(e) => onUpdate('customLock', e.target.value)}
           disabled={disabled} placeholder="z.B. Tattoo linker Arm, rotes Kleid, Schmuck…"
@@ -146,7 +191,7 @@ function UploadZone({
 }: {
   images: UploadedImage[]; onAdd: (files: FileList | File[]) => void
   onRemove: (id: string) => void; onClear: () => void
-  onUpdateImage: (id: string, field: 'faceLock' | 'objectLock' | 'customLock', value: boolean | string) => void
+  onUpdateImage: (id: string, field: 'faceLock' | 'objectLock' | 'customLock' | 'rolle', value: boolean | string) => void
   disabled?: boolean
 }) {
   const inputRef = useRef<HTMLInputElement>(null)
@@ -165,14 +210,14 @@ function UploadZone({
         onClick={() => !disabled && inputRef.current?.click()}
         className={`relative flex flex-col items-center justify-center gap-4 border-2 border-dashed rounded-2xl cursor-pointer select-none transition-all duration-200
           ${images.length > 0 ? 'p-5' : 'p-10'}
-          ${dragging ? 'drop-zone-active' : 'border-cream-300 bg-cream-50 hover:border-banana-300 hover:bg-banana-50/50'}
+          ${dragging ? 'drop-zone-active' : 'border-cream-300 bg-cream-50 hover:border-heron-300 hover:bg-heron-50/50'}
           ${disabled ? 'opacity-50 cursor-not-allowed' : ''}`}>
         <input ref={inputRef} type="file" accept="image/*,application/pdf" multiple className="hidden"
           onChange={(e) => { if (e.target.files) onAdd(e.target.files); e.target.value = '' }} disabled={disabled} />
         {images.length === 0 ? (
           <>
-            <div className={`w-16 h-16 rounded-2xl flex items-center justify-center transition-all duration-200 ${dragging ? 'bg-banana-100' : 'bg-white shadow-card'}`}>
-              <svg className={`w-7 h-7 transition-colors duration-200 ${dragging ? 'text-banana-500' : 'text-ink-300'}`} fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <div className={`w-16 h-16 rounded-2xl flex items-center justify-center transition-all duration-200 ${dragging ? 'bg-heron-100' : 'bg-white shadow-card'}`}>
+              <svg className={`w-7 h-7 transition-colors duration-200 ${dragging ? 'text-heron-500' : 'text-ink-300'}`} fill="none" stroke="currentColor" viewBox="0 0 24 24">
                 <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5}
                   d="M4 16l4.586-4.586a2 2 0 012.828 0L16 16m-2-2l1.586-1.586a2 2 0 012.828 0L20 14m-6-6h.01M6 20h12a2 2 0 002-2V6a2 2 0 00-2-2H6a2 2 0 00-2 2v12a2 2 0 002 2z" />
               </svg>
@@ -182,16 +227,16 @@ function UploadZone({
                 {dragging ? 'Jetzt loslassen' : 'Referenzbild hier ablegen'}
               </p>
               <p className="text-ink-400 text-sm mt-1 font-sans">
-                oder <span className="text-banana-600 font-medium underline underline-offset-2">durchsuchen</span> · JPEG, PNG, WebP, PDF · max 50 MB
+                oder <span className="text-heron-600 font-medium underline underline-offset-2">durchsuchen</span> · JPEG, PNG, WebP, PDF · max 50 MB
               </p>
             </div>
           </>
         ) : (
           <div className="flex items-center gap-2 text-ink-400 text-sm font-sans">
-            <svg className="w-4 h-4 text-banana-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <svg className="w-4 h-4 text-heron-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
               <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4v16m8-8H4" />
             </svg>
-            Weiteres Bild ablegen oder <span className="text-banana-600 underline underline-offset-2">durchsuchen</span>
+            Weiteres Bild ablegen oder <span className="text-heron-600 underline underline-offset-2">durchsuchen</span>
           </div>
         )}
       </div>
@@ -241,18 +286,41 @@ function JobPanel({
   const [generationError, setGenerationError] = useState<string | null>(null)
   const [generatedImage, setGeneratedImage] = useState<string | null>(null)
   const [generatedModel, setGeneratedModel] = useState<string | undefined>()
-  const [selectedModel, setSelectedModel] = useState<GenModel>('pro')
+  // Fünf Modelle passen nicht mehr als Kacheln nebeneinander: ein Schalter je
+  // Anbieter-Familie, darin ein Dropdown mit den Modellen dieser Familie.
+  //
+  // Wichtig: Familie und gewähltes Modell sind GETRENNTER State. Läge nur das
+  // aktive Modell im State, ginge beim Wechsel der Familie die Modellwahl in
+  // der anderen jedes Mal verloren.
+  const [aktiveFamilie, setAktiveFamilie] = useState<GenFamilie>(familieVon(STANDARD_MODELL))
+  const [familienModell, setFamilienModell] = useState<Record<GenFamilie, GenModel>>(
+    { gpt: STANDARD_MODELL, nano: 'pro' })
+  const selectedModel = familienModell[aktiveFamilie]
   const [selectedResolution, setSelectedResolution] = useState<'1K' | '2K' | '4K' | 'auto'>('2K')
   const [selectedAspectRatio, setSelectedAspectRatio] = useState('1:1')
   const [selectedOutputFormat, setSelectedOutputFormat] = useState<OpenAIFormat>('auto')
+  // Freistellen können nur die gpt-image-2.5-Modelle. Der Schalter verschwindet
+  // bei allen anderen, statt still wirkungslos zu bleiben.
+  const [transparent, setTransparent] = useState(false)
 
   const availableRatios = ratiosForModel(selectedModel)
   const availableResolutions: Array<'auto' | '1K' | '2K' | '4K'> =
-    selectedModel === 'openai' ? ['auto', '1K', '2K', '4K'] : ['1K', '2K', '4K']
-  const pickModel = (m: GenModel) => {
-    setSelectedModel(m)
+    istGpt(selectedModel) ? ['auto', '1K', '2K', '4K'] : ['1K', '2K', '4K']
+  /** Auflösung und Format an ein Modell anpassen, das sie vielleicht nicht kennt. */
+  const passeEinstellungenAn = (m: GenModel) => {
     if (!ratiosForModel(m).includes(selectedAspectRatio)) setSelectedAspectRatio('1:1')
-    if (m !== 'openai' && selectedResolution === 'auto') setSelectedResolution('2K')
+    if (!istGpt(m) && selectedResolution === 'auto') setSelectedResolution('2K')
+    if (!kannTransparenz(m)) setTransparent(false)
+  }
+  const pickFamilie = (f: GenFamilie) => {
+    setAktiveFamilie(f)
+    passeEinstellungenAn(familienModell[f])
+  }
+  // Wer im Dropdown etwas aussucht, will damit rechnen — also Familie mit aktivieren.
+  const setzeModell = (f: GenFamilie, m: GenModel) => {
+    setFamilienModell((prev) => ({ ...prev, [f]: m }))
+    setAktiveFamilie(f)
+    passeEinstellungenAn(m)
   }
 
   const addImages = useCallback((files: FileList | File[]) => {
@@ -262,7 +330,16 @@ function JobPanel({
       const ext = f.name.split('.').pop()?.toLowerCase() ?? ''
       return IMAGE_EXTS.has(ext)
     })
-    setImages((prev) => [...prev, ...accepted.map(createUploadedImage)])
+    const neue = accepted.map(createUploadedImage)
+    setImages((prev) => [...prev, ...neue])
+    // Maße nachtragen, sobald sie bekannt sind — für den Auflösungshinweis.
+    for (const eintrag of neue) {
+      if (eintrag.file.type === 'application/pdf') continue
+      const messbild = new Image()
+      messbild.onload = () => setImages((prev) => prev.map((i) =>
+        i.id === eintrag.id ? { ...i, breite: messbild.width, hoehe: messbild.height } : i))
+      messbild.src = eintrag.preview
+    }
   }, [])
 
   const removeImage = useCallback((id: string) => {
@@ -273,9 +350,27 @@ function JobPanel({
     setImages((prev) => { prev.forEach((i) => URL.revokeObjectURL(i.preview)); return [] })
   }, [])
 
-  const updateImageSetting = useCallback((id: string, field: 'faceLock' | 'objectLock' | 'customLock', value: boolean | string) => {
+  const updateImageSetting = useCallback((id: string, field: 'faceLock' | 'objectLock' | 'customLock' | 'rolle', value: boolean | string) => {
     setImages((prev) => prev.map((img) => img.id === id ? { ...img, [field]: value } : img))
   }, [])
+
+  /**
+   * Die verbindliche Reihenfolge der Bilder: erst Ausgangsmaterial, dann
+   * Zielreferenz, dann Personen.
+   *
+   * Sie wird EINMAL festgelegt und von beiden Seiten benutzt — vom
+   * Prompt-Schreiber und vom Bildmodell. Würde jede Seite für sich nummerieren,
+   * meinte „IMAGE 2" im Prompt ein anderes Bild als beim Bildmodell, und
+   * niemand sähe den Fehler. `begrenze` kappt zu lange Listen so, dass das
+   * Ausgangsmaterial als Letztes fällt.
+   */
+  const ROLLEN_ORDNUNG: RefRolle[] = ['ausgang', 'ziel', 'person']
+  const geordneteBilder = useMemo(
+    () => [...images].sort((a, b) => ROLLEN_ORDNUNG.indexOf(a.rolle) - ROLLEN_ORDNUNG.indexOf(b.rolle)),
+    [images])
+  /** Bildnummern (1-basiert) je Rolle — für die Identitätsklausel. */
+  const nummernMit = (rolle: RefRolle) => geordneteBilder
+    .map((b, i) => ({ b, nr: i + 1 })).filter((x) => x.b.rolle === rolle).map((x) => x.nr)
 
   const toggleChange = useCallback((area: FocusArea) =>
     setChangeAreas((p) => p.includes(area) ? p.filter((a) => a !== area) : [...p, area]), [])
@@ -284,12 +379,22 @@ function JobPanel({
     if (images.length === 0 && promptMode !== 'generation') return
     setAnalysisStatus('analyzing'); setAnalysisError(null); setPrompt('')
     try {
-      const compressed = await Promise.all(images.map((img) =>
+      const compressed = await Promise.all(geordneteBilder.map((img) =>
         img.file.type === 'application/pdf' ? Promise.resolve(img.file) : compressImage(img.file)))
       const formData = new FormData()
       compressed.forEach((f) => formData.append('images', f))
-      const imageSettings = images.map((img) => ({
-        name: img.name, faceLock: img.faceLock, objectLock: img.objectLock, customLock: img.customLock.trim(),
+      // Der Gesicht-Lock setzt sich selbst, wenn der Auftragstext ihn sinngemäß
+      // verlangt („Gesicht von der Vorlage", „gleiche Person"). Sonst bleibt
+      // der Wunsch bloßer Fließtext und landet bestenfalls unter „Änderungen",
+      // also als weiche Bitte statt als pixelgenaue Auflage.
+      const gesichtErzwungen = willGesichtLock(userDescription)
+      const imageSettings = geordneteBilder.map((img) => ({
+        name: img.name,
+        rolle: img.rolle,
+        rollenRegel: ROLLEN_REGEL[img.rolle],
+        faceLock: img.faceLock || (gesichtErzwungen && img.rolle === 'ausgang'),
+        objectLock: img.objectLock,
+        customLock: img.customLock.trim(),
       }))
       formData.append('imageSettings', JSON.stringify(imageSettings))
       if (userDescription.trim()) formData.append('userDescription', userDescription.trim())
@@ -325,14 +430,15 @@ function JobPanel({
       setAnalysisError(err instanceof Error ? err.message : 'Analyse fehlgeschlagen')
       setAnalysisStatus('error')
     }
-  }, [images, userDescription, promptMode, changeAreas, mockupType, mockupEnvironment])
+  }, [geordneteBilder, userDescription, promptMode, changeAreas, mockupType, mockupEnvironment])
 
   const handleGenerate = useCallback(async () => {
     if (!prompt.trim()) return
     setGenerationStatus('generating'); setGenerationError(null); setGeneratedImage(null)
     try {
+      const bilder = begrenze(geordneteBilder)
       const referenceImages = await Promise.all(
-        images.map((img) => (img.file.type === 'application/pdf' ? renderPdfFirstPageToFile(img.file) : compressImage(img.file)).then(
+        bilder.map((img) => (img.file.type === 'application/pdf' ? renderPdfFirstPageToFile(img.file) : compressImage(img.file)).then(
           (compressed) => new Promise<{ mimeType: string; data: string }>((resolve) => {
             const reader = new FileReader()
             reader.onload = () => {
@@ -344,12 +450,24 @@ function JobPanel({
           }),
         ))
       )
+      // Legende VOR den Prompt: Sie sagt für jede Bildnummer, was das Bild ist
+      // und wie damit umzugehen ist. Die Identitätsklausel ans ENDE — beim
+      // Bildmodell wiegt das zuletzt Gelesene schwerer, und die Identität muss
+      // jede freiere Formulierung davor überstimmen.
+      const rollenListe: RefBild[] = bilder.map((img, i) => ({
+        ...referenceImages[i], rolle: img.rolle, zeigt: img.name,
+      }))
+      const legende = baueLegende(rollenListe)
+      const klausel = identitaetsKlausel(nummernMit('ausgang'), nummernMit('ziel'))
+      const volltext = [legende, prompt.trim(), klausel].filter(Boolean).join('\n\n')
+
       const res = await fetch('/api/generate', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
-          prompt: prompt.trim(), model: selectedModel, resolution: selectedResolution, aspectRatio: selectedAspectRatio,
-          outputFormat: selectedModel === 'openai' ? selectedOutputFormat : undefined,
+          prompt: volltext, model: selectedModel, resolution: selectedResolution, aspectRatio: selectedAspectRatio,
+          outputFormat: istGpt(selectedModel) ? selectedOutputFormat : undefined,
+          transparent: kannTransparenz(selectedModel) && transparent ? true : undefined,
           referenceImages: referenceImages.length > 0 ? referenceImages : undefined,
         }),
       })
@@ -363,7 +481,7 @@ function JobPanel({
       setGenerationError(err instanceof Error ? err.message : 'Generierung fehlgeschlagen')
       setGenerationStatus('error')
     }
-  }, [prompt, selectedModel, selectedResolution, selectedAspectRatio, selectedOutputFormat, images])
+  }, [prompt, selectedModel, selectedResolution, selectedAspectRatio, selectedOutputFormat, transparent, images])
 
   const canAnalyze = (images.length > 0 || promptMode === 'generation') && analysisStatus !== 'analyzing'
   const canGenerate = prompt.trim().length > 0 && generationStatus !== 'generating'
@@ -374,7 +492,7 @@ function JobPanel({
       {/* Upload Zone */}
       {promptMode === 'generation' && images.length === 0 && (
         <p className="text-center text-xs font-sans text-ink-400">
-          <span className="text-banana-600 font-medium">Optional:</span> Stil-Referenzbilder hochladen — oder einfach unten beschreiben.
+          <span className="text-heron-600 font-medium">Optional:</span> Stil-Referenzbilder hochladen — oder einfach unten beschreiben.
         </p>
       )}
       <UploadZone images={images} onAdd={addImages} onRemove={removeImage} onClear={clearImages}
@@ -389,7 +507,7 @@ function JobPanel({
             <span className="label-section">Modus</span>
             <div className="flex items-center gap-2">
               <button onClick={onAdd} title="Neuen Auftrag hinzufügen"
-                className="w-7 h-7 rounded-full bg-banana-100 text-banana-600 hover:bg-banana-500 hover:text-white flex items-center justify-center transition-all duration-150 shadow-sm">
+                className="w-7 h-7 rounded-full bg-heron-100 text-heron-600 hover:bg-heron-500 hover:text-white flex items-center justify-center transition-all duration-150 shadow-sm">
                 <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                   <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2.5} d="M12 4v16m8-8H4" />
                 </svg>
@@ -439,7 +557,7 @@ function JobPanel({
                   <button key={t.id} onClick={() => setMockupType(mockupType === t.id ? '' : t.id)}
                     disabled={analysisStatus === 'analyzing'}
                     className={`chip-change ${mockupType === t.id ? 'chip-change-active' : ''}`}>
-                    {t.icon} {t.label}
+                    {t.label}
                   </button>
                 ))}
               </div>
@@ -447,11 +565,11 @@ function JobPanel({
             <div className="flex flex-col gap-2">
               <span className="label-section">Umfeld-Farbgebung</span>
               <div className="flex gap-2">
-                {([['light', '☀️', 'Hell'], ['dark', '🌙', 'Dunkel']] as const).map(([val, icon, label]) => (
+                {([['light', 'Hell'], ['dark', 'Dunkel']] as const).map(([val, label]) => (
                   <button key={val} onClick={() => setMockupEnvironment(mockupEnvironment === val ? '' : val)}
                     disabled={analysisStatus === 'analyzing'}
                     className={`chip-change ${mockupEnvironment === val ? 'chip-change-active' : ''}`}>
-                    {icon} {label}
+                    {label}
                   </button>
                 ))}
               </div>
@@ -463,7 +581,7 @@ function JobPanel({
         {promptMode === 'retouch' && <div className="flex flex-col gap-2">
           <div className="flex items-center justify-between">
             <span className="label-section flex items-center gap-1.5">
-              <svg className="w-3 h-3 text-banana-500" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <svg className="w-3 h-3 text-heron-500" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                 <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2.5} d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z" />
               </svg>
               Ändern (global)
@@ -477,7 +595,7 @@ function JobPanel({
               <button key={area.id} title={area.hint} onClick={() => toggleChange(area.id)}
                 disabled={analysisStatus === 'analyzing'}
                 className={changeAreas.includes(area.id) ? 'chip-change-active' : 'chip-change'}>
-                {area.icon} {area.label}
+                {area.label}
               </button>
             ))}
           </div>
@@ -523,9 +641,9 @@ function JobPanel({
           </div>
         )}
 
-        <div className="bg-banana-50 border border-banana-200 rounded-xl px-4 py-3">
+        <div className="bg-heron-50 border border-heron-200 rounded-xl px-4 py-3">
           <p className="text-ink-500 text-xs font-sans leading-relaxed">
-            <span className="text-banana-700 font-semibold">Claude Sonnet</span> analysiert deine Referenzbilder mit den gesetzten Lock-Regeln und erstellt einen strukturierten, detaillierten Prompt.
+            <span className="text-heron-700 font-semibold">Claude Sonnet</span> analysiert deine Referenzbilder mit den gesetzten Lock-Regeln und erstellt einen strukturierten, detaillierten Prompt.
           </p>
         </div>
       </div>
@@ -567,13 +685,51 @@ function JobPanel({
           <div className="grid grid-cols-2 gap-3">
             <div className="flex flex-col gap-1.5">
               <span className="label-section">Modell</span>
-              <div className="bg-cream-100 rounded-xl p-1 flex gap-1">
-                {GEN_MODELS.map((m) => (
-                  <button key={m.id} onClick={() => pickModel(m.id)}
-                    className={`mode-btn text-xs py-2 ${selectedModel === m.id ? 'mode-btn-active' : 'mode-btn-inactive'}`}>
-                    {m.icon} {m.label} <span className="text-[10px] opacity-60 ml-0.5">{m.hint}</span>
-                  </button>
-                ))}
+              {/* Ein Schalter je Anbieter, darunter die Modellwahl. Der Hover
+                  erklärt Stärken und ungefähre Kosten — die Modellnamen allein
+                  sagen niemandem, was er bestellt. Auf dem Telefon gibt es kein
+                  Hover, deshalb steht dasselbe noch einmal unter dem Dropdown. */}
+              <div className="grid grid-cols-2 gap-2">
+                {GEN_FAMILIEN.map((f) => {
+                  const aktiv = aktiveFamilie === f.id
+                  const modelle = GEN_MODELS.filter((m) => m.familie === f.id)
+                  const gewaehlt = modellDef(familienModell[f.id])
+                  return (
+                    <div key={f.id} className="flex flex-col gap-1">
+                      <div className="relative group">
+                        <button onClick={() => pickFamilie(f.id)}
+                          className={`mode-btn w-full !flex-col gap-0.5 text-xs py-2.5 leading-tight text-center
+                            ${aktiv ? 'mode-btn-active' : 'mode-btn-inactive'}`}>
+                          <span className="text-sm">{f.label}</span>
+                          <span className="text-[10px] opacity-60">{gewaehlt.label}</span>
+                        </button>
+                        <div className="hidden sm:block pointer-events-none absolute z-30 left-0 right-0 bottom-full mb-2
+                          opacity-0 group-hover:opacity-100 transition-opacity duration-150">
+                          <div className="bg-ink-900 text-white rounded-xl p-3 shadow-lg flex flex-col gap-1.5">
+                            <span className="font-sans font-semibold text-xs">{f.label}</span>
+                            <span className="font-sans text-[11px] leading-snug opacity-90">{f.koennen}</span>
+                            <span className="font-sans text-[11px] text-heron-300">{f.preis}</span>
+                            <span className="font-sans text-[10px] opacity-60 leading-snug">
+                              {modelle.map((m) => `${m.label}: ${m.staerke}`).join(' · ')}
+                            </span>
+                          </div>
+                        </div>
+                      </div>
+                      <select value={familienModell[f.id]}
+                        onChange={(e) => setzeModell(f.id, e.target.value as GenModel)}
+                        className={`w-full bg-cream-100 rounded-lg border-0 text-xs font-sans py-2 px-2 cursor-pointer
+                          focus:outline-none focus:ring-1 focus:ring-heron-500
+                          ${aktiv ? 'text-ink-700' : 'text-ink-400'}`}>
+                        {modelle.map((m) => (
+                          <option key={m.id} value={m.id}>{m.label} — {m.hint}</option>
+                        ))}
+                      </select>
+                      <span className="text-[10px] font-sans text-ink-400 leading-snug px-0.5">
+                        {gewaehlt.staerke} · {gewaehlt.preis[selectedResolution === 'auto' ? '2K' : selectedResolution]} je Bild
+                      </span>
+                    </div>
+                  )
+                })}
               </div>
             </div>
             <div className="flex flex-col gap-1.5">
@@ -592,18 +748,32 @@ function JobPanel({
             <div className="flex flex-wrap gap-1.5">
               {availableRatios.map((r) => (
                 <button key={r} onClick={() => setSelectedAspectRatio(r)}
-                  className={`px-3 py-1.5 rounded-lg text-xs font-sans font-medium transition-all ${selectedAspectRatio === r ? 'bg-banana-500 text-white shadow-sm' : 'bg-cream-100 text-ink-500 hover:bg-cream-200'}`}>
+                  className={`px-3 py-1.5 rounded-lg text-xs font-sans font-medium transition-all ${selectedAspectRatio === r ? 'bg-heron-500 text-white shadow-sm' : 'bg-cream-100 text-ink-500 hover:bg-cream-200'}`}>
                   {r === 'auto' ? 'Auto' : r}
                 </button>
               ))}
             </div>
-            {selectedModel === 'openai' && (
+            {istGpt(selectedModel) && (
               <p className="text-[11px] font-sans text-ink-400 mt-0.5">
-                gpt-image-2 rendert in jedem Format nativ — 4K erreicht max. ~8.3 MP (z.B. 3840×2160 bei 16:9, 2880×2880 bei 1:1, 3072×2048 bei 3:2).
+                {modellDef(selectedModel).hint} rendert in jedem Format nativ — 4K erreicht max. ~8.3 MP (z.B. 3840×2160 bei 16:9, 2880×2880 bei 1:1, 3072×2048 bei 3:2).
               </p>
             )}
           </div>
-          {selectedModel === 'openai' && (
+          {kannTransparenz(selectedModel) && (
+            <label className="flex items-start gap-2 cursor-pointer">
+              <input type="checkbox" checked={transparent}
+                onChange={(e) => setTransparent(e.target.checked)}
+                className="mt-0.5 accent-heron-500" />
+              <span className="flex flex-col">
+                <span className="text-xs font-sans font-medium text-ink-700">Freigestellt ausgeben</span>
+                <span className="text-[10px] font-sans text-ink-400 leading-snug">
+                  Transparenter Hintergrund. Nur gpt-image-2.5 kann das, und nur in
+                  PNG oder WebP — JPEG hat keinen Alphakanal, dort wird auf PNG gewechselt.
+                </span>
+              </span>
+            </label>
+          )}
+          {istGpt(selectedModel) && (
             <div className="flex flex-col gap-1.5">
               <span className="label-section">Output-Format</span>
               <div className="bg-cream-100 rounded-xl p-1 flex gap-1">
@@ -623,16 +793,14 @@ function JobPanel({
                   <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
                   <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z" />
                 </svg>
-                {selectedModel === 'pro' ? 'Nano Banana Pro generiert…'
-                  : 'OpenAI gpt-image-2 generiert…'}
+                {modellDef(selectedModel).label} generiert…
               </>
             ) : (
               <>
                 <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                   <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 16l4.586-4.586a2 2 0 012.828 0L16 16m-2-2l1.586-1.586a2 2 0 012.828 0L20 14m-6-6h.01M6 20h12a2 2 0 002-2V6a2 2 0 00-2-2H6a2 2 0 00-2 2v12a2 2 0 002 2z" />
                 </svg>
-                {selectedModel === 'pro' ? 'mit Nano Banana Pro generieren'
-                  : 'mit OpenAI gpt-image-2 generieren'}
+                mit {modellDef(selectedModel).label} generieren
               </>
             )}
           </button>
@@ -680,18 +848,13 @@ function LoginScreen({ onLogin }: { onLogin: (email: string) => void }) {
 
   return (
     <div className="min-h-dvh flex items-center justify-center bg-cream-50 relative overflow-hidden px-5">
-      <div className="aurora-blob w-[500px] h-[500px] bg-banana-200/60 animate-aurora-1" style={{ top: '-200px', left: '-100px', opacity: 0.7 }} />
-      <div className="aurora-blob w-[400px] h-[400px] bg-amber-100/80 animate-aurora-2" style={{ top: '-100px', right: '-80px', opacity: 0.6 }} />
-      <div className="aurora-blob w-[300px] h-[300px] bg-orange-100/60 animate-aurora-3" style={{ bottom: '-100px', left: '40%', opacity: 0.5 }} />
 
       <form onSubmit={submit} className="relative z-10 card p-8 w-full max-w-sm flex flex-col gap-5 animate-scale-in">
         <div className="flex flex-col items-center gap-3">
-          <div className="w-12 h-12 rounded-2xl bg-banana-gradient flex items-center justify-center shadow-banana text-xl text-white">
-            ✦
-          </div>
+          <img src="/heron-logo.png" alt="HERON Innovationsfactory" className="h-16 w-auto" />
           <div className="text-center">
-            <h1 className="font-display font-bold text-ink-900 text-xl tracking-tight">
-              Heron <span className="text-banana-500">AI Studio</span>
+            <h1 className="font-display font-bold text-ink-800 text-xl uppercase tracking-wide">
+              AI Studio
             </h1>
             <p className="text-ink-400 text-xs font-sans mt-1">Bitte anmelden, um fortzufahren</p>
           </div>
@@ -738,6 +901,9 @@ export default function App() {
   const [authChecked, setAuthChecked] = useState(false)
   const [authEnabled, setAuthEnabled] = useState(false)
   const [userEmail, setUserEmail] = useState<string | null>(null)
+  // Der Server sperrt mit 503, wenn AUTH_USERS/AUTH_SECRET fehlen oder kaputt
+  // sind. Dann hilft kein Anmeldeformular — es kann gar nicht funktionieren.
+  const [konfigFehler, setKonfigFehler] = useState<string | null>(null)
 
   useEffect(() => {
     let cancelled = false
@@ -745,6 +911,7 @@ export default function App() {
       .then(async (r) => {
         const data = await r.json().catch(() => ({}))
         if (cancelled) return
+        if (r.status === 503) setKonfigFehler(data.error ?? 'Anmeldung ist nicht eingerichtet')
         setAuthEnabled(!!data.authEnabled)
         setUserEmail(data.email ?? null)
         setAuthChecked(true)
@@ -761,10 +928,28 @@ export default function App() {
   if (!authChecked) {
     return (
       <div className="min-h-dvh flex items-center justify-center bg-cream-50">
-        <svg className="w-6 h-6 animate-spin text-banana-500" fill="none" viewBox="0 0 24 24">
+        <svg className="w-6 h-6 animate-spin text-heron-500" fill="none" viewBox="0 0 24 24">
           <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
           <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z" />
         </svg>
+      </div>
+    )
+  }
+
+  if (konfigFehler) {
+    return (
+      <div className="min-h-dvh flex items-center justify-center bg-cream-50 p-6">
+        <div className="card max-w-lg w-full p-8 flex flex-col gap-4">
+          <img src="/heron-logo.png" alt="HERON Innovationsfactory" className="h-12 w-auto self-start" />
+          <h1 className="font-display font-bold text-ink-800 text-xl uppercase tracking-wide">Zugriff gesperrt</h1>
+          <p className="font-sans text-sm text-ink-600 leading-relaxed">{konfigFehler}</p>
+          <p className="font-sans text-xs text-ink-400 leading-relaxed">
+            Das ist kein Fehler deiner Anmeldung. Die Umgebungsvariablen
+            {' '}<code className="font-mono">AUTH_USERS</code> und
+            {' '}<code className="font-mono">AUTH_SECRET</code> müssen in Vercel gesetzt und
+            gültig sein. Bis dahin bleibt alles zu — damit die Seite nicht offen im Netz steht.
+          </p>
+        </div>
       </div>
     )
   }
@@ -780,18 +965,31 @@ function AppMain({ userEmail, authEnabled, onLogout }: { userEmail: string | nul
   const [jobs, setJobs] = useState<number[]>([Date.now()])
   const [quickOpen, setQuickOpen] = useState(false)
   const [quickPrompt, setQuickPrompt] = useState('')
-  const [quickModel, setQuickModel] = useState<GenModel>('pro')
+  const [quickFamilie, setQuickFamilie] = useState<GenFamilie>(familieVon(STANDARD_MODELL))
+  const [quickFamilienModell, setQuickFamilienModell] = useState<Record<GenFamilie, GenModel>>(
+    { gpt: STANDARD_MODELL, nano: 'pro' })
+  const quickModel = quickFamilienModell[quickFamilie]
   const [quickResolution, setQuickResolution] = useState<'1K' | '2K' | '4K' | 'auto'>('2K')
   const [quickAspectRatio, setQuickAspectRatio] = useState('1:1')
   const [quickOutputFormat, setQuickOutputFormat] = useState<OpenAIFormat>('auto')
+  const [quickTransparent, setQuickTransparent] = useState(false)
 
   const quickRatios = ratiosForModel(quickModel)
   const quickResolutions: Array<'auto' | '1K' | '2K' | '4K'> =
-    quickModel === 'openai' ? ['auto', '1K', '2K', '4K'] : ['1K', '2K', '4K']
-  const pickQuickModel = (m: GenModel) => {
-    setQuickModel(m)
+    istGpt(quickModel) ? ['auto', '1K', '2K', '4K'] : ['1K', '2K', '4K']
+  const passeQuickAn = (m: GenModel) => {
     if (!ratiosForModel(m).includes(quickAspectRatio)) setQuickAspectRatio('1:1')
-    if (m !== 'openai' && quickResolution === 'auto') setQuickResolution('2K')
+    if (!istGpt(m) && quickResolution === 'auto') setQuickResolution('2K')
+    if (!kannTransparenz(m)) setQuickTransparent(false)
+  }
+  const pickQuickFamilie = (f: GenFamilie) => {
+    setQuickFamilie(f)
+    passeQuickAn(quickFamilienModell[f])
+  }
+  const setzeQuickModell = (f: GenFamilie, m: GenModel) => {
+    setQuickFamilienModell((prev) => ({ ...prev, [f]: m }))
+    setQuickFamilie(f)
+    passeQuickAn(m)
   }
   const [quickStatus, setQuickStatus] = useState<GenerationStatus>('idle')
   const [quickError, setQuickError] = useState<string | null>(null)
@@ -809,7 +1007,8 @@ function AppMain({ userEmail, authEnabled, onLogout }: { userEmail: string | nul
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           prompt: quickPrompt.trim(), model: quickModel, resolution: quickResolution, aspectRatio: quickAspectRatio,
-          outputFormat: quickModel === 'openai' ? quickOutputFormat : undefined,
+          outputFormat: istGpt(quickModel) ? quickOutputFormat : undefined,
+          transparent: kannTransparenz(quickModel) && quickTransparent ? true : undefined,
         }),
       })
       if (!res.ok) {
@@ -822,29 +1021,27 @@ function AppMain({ userEmail, authEnabled, onLogout }: { userEmail: string | nul
       setQuickError(err instanceof Error ? err.message : 'Fehler')
       setQuickStatus('error')
     }
-  }, [quickPrompt, quickModel, quickResolution, quickAspectRatio, quickOutputFormat])
+  }, [quickPrompt, quickModel, quickResolution, quickAspectRatio, quickOutputFormat, quickTransparent])
 
   return (
     <div className="min-h-dvh flex flex-col bg-cream-50">
 
       {/* ── Header ────────────────────────────────────────────────────────── */}
-      <header className="sticky top-0 z-50 bg-white/80 backdrop-blur-md border-b border-cream-200">
+      <header className="sticky top-0 z-50 bg-white border-b border-cream-200">
         <div className="max-w-4xl mx-auto px-5 py-4 flex items-center justify-between">
           <div className="flex items-center gap-3">
-            <div className="w-9 h-9 rounded-xl bg-banana-gradient flex items-center justify-center shadow-banana text-lg text-white">
-              ✦
-            </div>
+            <img src="/heron-mark.svg" alt="" aria-hidden="true" className="w-7 h-7" />
             <div>
-              <h1 className="font-display font-bold text-ink-900 text-base leading-none tracking-tight">
+              <h1 className="font-display font-bold text-ink-800 text-base leading-none uppercase tracking-[0.1em]">
                 Heron
-                <span className="text-banana-500 ml-1.5">AI Studio</span>
+                <span className="text-heron-500 ml-1.5">AI Studio</span>
               </h1>
               <p className="text-ink-400 text-[11px] font-sans mt-0.5">Prompt · Retusche · Bildgenerierung</p>
             </div>
           </div>
           <div className="flex items-center gap-2">
             <button onClick={() => setQuickOpen((o) => !o)}
-              className={`flex items-center gap-1.5 px-3 py-1.5 rounded-full border text-xs font-sans font-medium transition-all duration-150 ${quickOpen ? 'bg-banana-500 text-white border-banana-500 shadow-banana' : 'bg-white text-ink-500 border-cream-200 hover:border-banana-300 hover:text-banana-600 shadow-card'}`}>
+              className={`flex items-center gap-1.5 px-3 py-1.5 rounded-full border text-xs font-sans font-medium transition-all duration-150 ${quickOpen ? 'bg-heron-500 text-white border-heron-500' : 'bg-white text-ink-500 border-cream-200 hover:border-heron-300 hover:text-heron-600 shadow-card'}`}>
               <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                 <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 10V3L4 14h7v7l9-11h-7z" />
               </svg>
@@ -865,15 +1062,12 @@ function AppMain({ userEmail, authEnabled, onLogout }: { userEmail: string | nul
 
       {/* ── Hero ──────────────────────────────────────────────────────────── */}
       <div className="relative overflow-hidden bg-white border-b border-cream-200">
-        <div className="aurora-blob w-[500px] h-[500px] bg-banana-200/60 animate-aurora-1" style={{ top: '-200px', left: '-100px', opacity: 0.7 }} />
-        <div className="aurora-blob w-[400px] h-[400px] bg-amber-100/80 animate-aurora-2" style={{ top: '-100px', right: '-80px', opacity: 0.6 }} />
-        <div className="aurora-blob w-[300px] h-[300px] bg-orange-100/60 animate-aurora-3" style={{ bottom: '-100px', left: '40%', opacity: 0.5 }} />
         <div className="relative z-10 max-w-4xl mx-auto px-5 pt-10 pb-8 text-center">
           <p className="label-step mb-3">AI Creative Studio</p>
-          <h2 className="font-display font-extrabold text-4xl sm:text-5xl text-ink-900 leading-[1.1] tracking-tight">
+          <h2 className="font-display font-bold uppercase text-4xl sm:text-5xl text-ink-800 leading-[1.08] tracking-[0.02em]">
             Prompt. Retuschieren.
             <br />
-            <span className="text-banana-500">Bilder generieren.</span>
+            <span className="text-heron-500">Bilder generieren.</span>
           </h2>
           <p className="text-ink-400 font-sans text-base mt-4 max-w-lg mx-auto leading-relaxed">
             Referenzbilder hochladen · Lock-Regeln setzen · Claude generiert den Prompt · Gemini oder OpenAI rendert das Bild.
@@ -915,13 +1109,27 @@ function AppMain({ userEmail, authEnabled, onLogout }: { userEmail: string | nul
             <div className="grid grid-cols-3 gap-2">
               <div className="flex flex-col gap-1">
                 <span className="label-section text-[10px]">Modell</span>
-                <div className="bg-cream-100 rounded-xl p-0.5 flex gap-0.5">
-                  {GEN_MODELS.map((m) => (
-                    <button key={m.id} onClick={() => pickQuickModel(m.id)}
-                      className={`mode-btn text-xs py-1.5 ${quickModel === m.id ? 'mode-btn-active' : 'mode-btn-inactive'}`}>
-                      {m.icon} {m.label}
-                    </button>
-                  ))}
+                <div className="flex flex-col gap-1">
+                  <div className="bg-cream-100 rounded-xl p-0.5 flex gap-0.5">
+                    {GEN_FAMILIEN.map((f) => (
+                      <button key={f.id} onClick={() => pickQuickFamilie(f.id)}
+                        title={`${f.koennen} (${f.preis})`}
+                        className={`mode-btn text-xs py-1.5 ${quickFamilie === f.id ? 'mode-btn-active' : 'mode-btn-inactive'}`}>
+                        {f.label}
+                      </button>
+                    ))}
+                  </div>
+                  <select value={quickFamilienModell[quickFamilie]}
+                    onChange={(e) => setzeQuickModell(quickFamilie, e.target.value as GenModel)}
+                    className="w-full bg-cream-100 rounded-lg border-0 text-xs font-sans py-1.5 px-2 text-ink-700
+                      cursor-pointer focus:outline-none focus:ring-1 focus:ring-heron-500">
+                    {GEN_MODELS.filter((m) => m.familie === quickFamilie).map((m) => (
+                      <option key={m.id} value={m.id}>{m.label}</option>
+                    ))}
+                  </select>
+                  <span className="text-[10px] font-sans text-ink-400 leading-snug">
+                    {modellDef(quickModel).preis[quickResolution === 'auto' ? '2K' : quickResolution]} je Bild
+                  </span>
                 </div>
               </div>
               <div className="flex flex-col gap-1">
@@ -947,7 +1155,17 @@ function AppMain({ userEmail, authEnabled, onLogout }: { userEmail: string | nul
                 </div>
               </div>
             </div>
-            {quickModel === 'openai' && (
+            {kannTransparenz(quickModel) && (
+              <label className="flex items-center gap-2 cursor-pointer">
+                <input type="checkbox" checked={quickTransparent}
+                  onChange={(e) => setQuickTransparent(e.target.checked)}
+                  className="accent-heron-500" />
+                <span className="text-[11px] font-sans text-ink-600">
+                  Freigestellt ausgeben (transparenter Hintergrund, PNG)
+                </span>
+              </label>
+            )}
+            {istGpt(quickModel) && (
               <div className="flex flex-col gap-1">
                 <span className="label-section text-[10px]">Output-Format</span>
                 <div className="bg-cream-100 rounded-xl p-0.5 flex gap-0.5">
@@ -1008,7 +1226,7 @@ function AppMain({ userEmail, authEnabled, onLogout }: { userEmail: string | nul
       <footer className="border-t border-cream-200 bg-white mt-auto">
         <div className="max-w-4xl mx-auto px-5 py-4 flex items-center justify-between">
           <p className="text-ink-300 text-xs font-sans">Heron AI Studio</p>
-          <p className="text-ink-300 text-xs font-sans">Claude Sonnet Vision · Gemini 3 Pro · OpenAI gpt-image-2</p>
+          <p className="text-ink-300 text-xs font-sans">Claude Sonnet Vision · {GEN_MODELS.map((m) => m.label).join(' · ')}</p>
         </div>
       </footer>
     </div>

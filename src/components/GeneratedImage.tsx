@@ -16,15 +16,15 @@ interface Props {
 // ── Shooting Simulation ───────────────────────────────────────────────────────
 
 const SCENARIOS = [
-  { id: 'nahaufnahme',     label: '📐 Nahaufnahme',      prompt: 'close-up shot, tight framing, subject fills frame' },
-  { id: 'seitenansicht',   label: '🔄 Seitenansicht',    prompt: 'side profile view, 90-degree angle' },
-  { id: 'vogelperspektive',label: '🦅 Vogelperspektive', prompt: "bird's eye view, top-down perspective, looking down" },
-  { id: 'outdoor',         label: '🌅 Outdoor-Licht',    prompt: 'outdoor setting, natural daylight, environmental portrait' },
-  { id: 'dramatisch',      label: '🎭 Dramatisch',        prompt: 'dramatic lighting, strong shadows, high contrast, moody atmosphere' },
-  { id: 'weiss_bg',        label: '⬜ Weißer BG',         prompt: 'clean white background, minimalist studio photography' },
-  { id: 'nachtlicht',      label: '🌙 Nachtlicht',        prompt: 'night scene, artificial lighting, dark atmospheric mood' },
-  { id: 'produktshot',     label: '📦 Produktshot',       prompt: 'professional product photography, clean studio setup, neutral background' },
-  { id: 'editorial',       label: '✏️ Editorial',         prompt: 'editorial photography style, fashion magazine aesthetic' },
+  { id: 'nahaufnahme',     label: 'Nahaufnahme',      prompt: 'close-up shot, tight framing, subject fills frame' },
+  { id: 'seitenansicht',   label: 'Seitenansicht',    prompt: 'side profile view, 90-degree angle' },
+  { id: 'vogelperspektive',label: 'Vogelperspektive', prompt: "bird's eye view, top-down perspective, looking down" },
+  { id: 'outdoor',         label: 'Outdoor-Licht',    prompt: 'outdoor setting, natural daylight, environmental portrait' },
+  { id: 'dramatisch',      label: 'Dramatisch',        prompt: 'dramatic lighting, strong shadows, high contrast, moody atmosphere' },
+  { id: 'weiss_bg',        label: 'Weißer BG',         prompt: 'clean white background, minimalist studio photography' },
+  { id: 'nachtlicht',      label: 'Nachtlicht',        prompt: 'night scene, artificial lighting, dark atmospheric mood' },
+  { id: 'produktshot',     label: 'Produktshot',       prompt: 'professional product photography, clean studio setup, neutral background' },
+  { id: 'editorial',       label: 'Editorial',         prompt: 'editorial photography style, fashion magazine aesthetic' },
 ]
 
 interface ShootingResult {
@@ -121,7 +121,7 @@ function ShootingPanel({ imageDataUrl, model, aspectRatio }: {
         jobs.push({ label: s.label, promptText: buildShootingPrompt(s.prompt, '') })
       })
       if (hasCustom && customAsExtra) {
-        jobs.push({ label: '✏️ Eigene', promptText: buildShootingPrompt('', customText) })
+        jobs.push({ label: 'Eigene', promptText: buildShootingPrompt('', customText) })
       }
     } else {
       Array.from({ length: variantCount }, (_, i) =>
@@ -171,7 +171,7 @@ function ShootingPanel({ imageDataUrl, model, aspectRatio }: {
     <div className="flex flex-col gap-3 animate-slide-up">
       <button
         onClick={() => setOpen(o => !o)}
-        className="w-full flex items-center justify-center gap-2 py-3 px-4 rounded-xl border-2 border-dashed border-banana-300 bg-banana-50/60 text-banana-700 text-sm font-sans font-semibold hover:bg-banana-50 hover:border-banana-400 transition-all duration-150"
+        className="w-full flex items-center justify-center gap-2 py-3 px-4 rounded-xl border-2 border-dashed border-heron-300 bg-heron-50/60 text-heron-700 text-sm font-sans font-semibold hover:bg-heron-50 hover:border-heron-400 transition-all duration-150"
       >
         <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
           <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2}
@@ -185,7 +185,7 @@ function ShootingPanel({ imageDataUrl, model, aspectRatio }: {
       </button>
 
       {open && (
-        <div className="bg-banana-50 border border-banana-200 rounded-2xl p-4 flex flex-col gap-4 animate-scale-in">
+        <div className="bg-heron-50 border border-heron-200 rounded-2xl p-4 flex flex-col gap-4 animate-scale-in">
           <div>
             <p className="label-step mb-1">Shooting-Variationen</p>
             <p className="text-xs font-sans text-ink-400 leading-relaxed">
@@ -227,8 +227,8 @@ function ShootingPanel({ imageDataUrl, model, aspectRatio }: {
                 disabled={running}
                 className={`self-start flex items-center gap-1.5 text-xs font-sans font-medium px-3 py-1.5 rounded-lg border transition-all duration-150 ${
                   customAsExtra
-                    ? 'bg-banana-100 border-banana-400 text-banana-800'
-                    : 'bg-white border-cream-200 text-ink-400 hover:border-banana-300 hover:text-banana-700'
+                    ? 'bg-heron-100 border-heron-400 text-heron-800'
+                    : 'bg-white border-cream-200 text-ink-400 hover:border-heron-300 hover:text-heron-700'
                 }`}
               >
                 <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -242,14 +242,15 @@ function ShootingPanel({ imageDataUrl, model, aspectRatio }: {
           {/* Model selector */}
           <div className="flex flex-col gap-2">
             <span className="label-section">Modell</span>
-            <div className="bg-cream-100 rounded-xl p-1 flex gap-1">
+            {/* Fünf Modelle passen hier nicht als Kacheln nebeneinander. */}
+            <select value={shootModel} disabled={running}
+              onChange={(e) => pickShootModel(e.target.value as GenModel)}
+              className="w-full bg-cream-100 border-0 text-xs font-sans py-2 px-2 text-ink-700
+                cursor-pointer focus:outline-none focus:ring-1 focus:ring-heron-500 disabled:text-ink-300">
               {GEN_MODELS.map((m) => (
-                <button key={m.id} type="button" onClick={() => pickShootModel(m.id)} disabled={running}
-                  className={`mode-btn text-xs py-2 ${shootModel === m.id ? 'mode-btn-active' : 'mode-btn-inactive'}`}>
-                  {m.icon} {m.label} <span className="text-[10px] opacity-60 ml-0.5">{m.hint}</span>
-                </button>
+                <option key={m.id} value={m.id}>{m.label} — {m.hint}</option>
               ))}
-            </div>
+            </select>
           </div>
 
           {/* Aspect ratio */}
@@ -259,7 +260,7 @@ function ShootingPanel({ imageDataUrl, model, aspectRatio }: {
               {shootRatios.map(r => (
                 <button key={r} type="button" onClick={() => setShootRatio(r)} disabled={running}
                   className={`px-3 py-1.5 rounded-lg text-xs font-sans font-medium transition-all ${
-                    shootRatio === r ? 'bg-banana-500 text-white shadow-sm' : 'bg-cream-100 text-ink-500 hover:bg-cream-200'
+                    shootRatio === r ? 'bg-heron-500 text-white shadow-sm' : 'bg-cream-100 text-ink-500 hover:bg-cream-200'
                   }`}>
                   {r === 'auto' ? 'Auto' : r}
                 </button>
@@ -284,7 +285,7 @@ function ShootingPanel({ imageDataUrl, model, aspectRatio }: {
 
           {/* Info line */}
           {totalImages > 0 && (
-            <p className="text-xs font-sans text-banana-700 bg-banana-100 rounded-lg px-3 py-2">
+            <p className="text-xs font-sans text-heron-700 bg-heron-100 rounded-lg px-3 py-2">
               {scenariosActive
                 ? `${selected.size} Szenario${selected.size > 1 ? 's' : ''}${customAsExtra ? ' + eigene Beschreibung' : ''} → ${totalImages} Bild${totalImages > 1 ? 'er' : ''} parallel`
                 : `${variantCount} Variation${variantCount > 1 ? 'en' : ''} werden parallel generiert`}
@@ -322,7 +323,7 @@ function ShootingPanel({ imageDataUrl, model, aspectRatio }: {
                 <div key={r.id} className="relative rounded-xl overflow-hidden aspect-square bg-cream-100 border border-cream-200">
                   {r.status === 'generating' && (
                     <div className="absolute inset-0 flex flex-col items-center justify-center gap-2">
-                      <div className="w-5 h-5 rounded-full border-2 border-cream-300 border-t-banana-500 animate-spin" />
+                      <div className="w-5 h-5 rounded-full border-2 border-cream-300 border-t-heron-500 animate-spin" />
                       <span className="text-[9px] font-sans text-ink-300">{r.label}</span>
                     </div>
                   )}
@@ -370,7 +371,7 @@ export default function GeneratedImage({ imageDataUrl, status, error, prompt, ac
     if (!imageDataUrl) return
     const a = document.createElement('a')
     a.href = imageDataUrl
-    a.download = `nano-banana-${Date.now()}.jpg`
+    a.download = `heron-${Date.now()}.jpg`
     a.click()
   }
 
@@ -401,17 +402,19 @@ export default function GeneratedImage({ imageDataUrl, status, error, prompt, ac
           <div className="flex flex-col items-center gap-4 p-8">
             <div className="relative w-20 h-20">
               <div className="absolute inset-0 rounded-full border-4 border-cream-200" />
-              <div className="absolute inset-0 rounded-full border-4 border-transparent border-t-banana-500 animate-spin" />
-              <div className="absolute inset-3 rounded-full border-2 border-transparent border-t-banana-300 animate-spin-slow" style={{ animationDirection: 'reverse' }} />
-              <div className="absolute inset-0 flex items-center justify-center text-2xl">🍌</div>
+              <div className="absolute inset-0 rounded-full border-4 border-transparent border-t-heron-500 animate-spin" />
+              <div className="absolute inset-3 rounded-full border-2 border-transparent border-t-heron-300 animate-spin-slow" style={{ animationDirection: 'reverse' }} />
+              <div className="absolute inset-0 flex items-center justify-center">
+                <img src="/heron-mark.svg" alt="" aria-hidden="true" className="w-6 h-6" />
+              </div>
             </div>
             <div className="text-center">
-              <p className="text-ink-800 font-semibold font-display">Generating…</p>
+              <p className="text-ink-800 font-bold font-display uppercase tracking-wide">Wird generiert…</p>
               <p className="text-ink-400 text-sm mt-1">10–30 Sekunden</p>
             </div>
             <div className="flex gap-1.5">
               {[0, 1, 2].map((i) => (
-                <div key={i} className="w-2 h-2 rounded-full bg-banana-400"
+                <div key={i} className="w-2 h-2 rounded-full bg-heron-400"
                   style={{ animation: `bounce 1.2s ease-in-out ${i * 0.2}s infinite` }} />
               ))}
             </div>

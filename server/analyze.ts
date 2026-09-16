@@ -79,6 +79,16 @@ WRITING STYLE
 
 interface ImageSetting {
   name: string
+  /**
+   * Wofür das Bild da ist. „ausgang" = woraus etwas entsteht, „ziel" = wie das
+   * Ergebnis aussehen soll, „person" = wessen Gesicht gilt. Ohne diese Angabe
+   * sieht der Prompt-Schreiber nur eine flache Bilderliste und beschreibt eine
+   * Zielreferenz wie eine Vorlage — dann landen Objekte und Gesichter aus dem
+   * falschen Bild im Ergebnis.
+   */
+  rolle?: 'ausgang' | 'ziel' | 'person'
+  /** Der Rollentext im Wortlaut, wie ihn auch das Bildmodell bekommt. */
+  rollenRegel?: string
   faceLock: boolean
   objectLock: boolean
   customLock: string
@@ -91,10 +101,38 @@ const CHANGE_MAP: Record<string, string> = {
   background: 'Background — describe required background change (include 🖼️ BACKGROUND section)',
 }
 
+const ROLLEN_NAME: Record<string, string> = {
+  ausgang: 'SOURCE MATERIAL',
+  ziel:    'TARGET REFERENCE (look only)',
+  person:  'THE PERSON (identity)',
+}
+
 function buildImageIndex(settings: ImageSetting[]): string {
   return settings
-    .map((s, i) => `— IMAGE ${i + 1} — "${s.name}"`)
+    .map((s, i) => {
+      const rolle = s.rolle ? ` [${ROLLEN_NAME[s.rolle] ?? s.rolle}]` : ''
+      return `— IMAGE ${i + 1} — "${s.name}"${rolle}`
+    })
     .join('\n')
+}
+
+/**
+ * Die Rollenregeln im Wortlaut. Sie stehen im Auftrag an den Prompt-Schreiber,
+ * damit der Prompt, den er schreibt, dieselbe Trennung kennt wie das Bildmodell
+ * danach — Ausgangsmaterial liefert den Inhalt, die Zielreferenz nur Anmutung.
+ */
+function buildRollenBlock(settings: ImageSetting[]): string {
+  const mitRolle = settings.filter((s) => s.rolle && s.rollenRegel)
+  if (mitRolle.length === 0) return ''
+  const zeilen = mitRolle.map((s) => `— IMAGE ${settings.indexOf(s) + 1} (${ROLLEN_NAME[s.rolle!] ?? s.rolle}): ${s.rollenRegel}`)
+  return `\n\n═══════════════════════════════════════════
+IMAGE ROLES — HOW EACH IMAGE MAY BE USED
+═══════════════════════════════════════════
+${zeilen.join('\n')}
+
+Never take the identity of a person, an object's shape or any branding from a
+TARGET REFERENCE. Those come from the SOURCE MATERIAL, however much sharper or
+better lit the target reference is.`
 }
 
 function buildPerImageLocks(settings: ImageSetting[]): string {
@@ -159,6 +197,7 @@ function buildUserMessage(
   const isMockup = promptMode === 'mockup'
   const hasChange = (changeAreas?.length ?? 0) > 0
   const imageIndexBlock = buildImageIndex(imageSettings)
+  const rollenBlock = buildRollenBlock(imageSettings)
   const perImageLocksBlock = buildPerImageLocks(imageSettings)
   const hasAnyLocks = imageSettings.some((s) => s.faceLock || s.objectLock || s.customLock)
 
@@ -306,7 +345,7 @@ When the user references "Bild 2" / "Image 2" / "the second image" — this mean
   return `USE THE UPLOADED PHOTO(S) AS STRICT REFERENCE BASE.
 THIS IS A PHOTO RETOUCH — NOT A NEW IMAGE GENERATION.
 
-${imageRefSection}${locksSection}${changeSection}${userBlock}${instruction}
+${imageRefSection}${rollenBlock}${locksSection}${changeSection}${userBlock}${instruction}
 
 ═══════════════════════════════════════════
 TASK

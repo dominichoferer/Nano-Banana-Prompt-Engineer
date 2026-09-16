@@ -106,6 +106,14 @@ WRITING STYLE
 
 interface ImageSetting {
   name: string
+  /**
+   * Wofür das Bild da ist. Ohne diese Angabe sieht der Prompt-Schreiber nur
+   * eine flache Bilderliste und beschreibt eine Zielreferenz wie eine Vorlage —
+   * dann landen Objekte und Gesichter aus dem falschen Bild im Ergebnis.
+   */
+  rolle?: 'ausgang' | 'ziel' | 'person'
+  /** Der Rollentext im Wortlaut, wie ihn auch das Bildmodell bekommt. */
+  rollenRegel?: string
   faceLock: boolean
   objectLock: boolean
   customLock: string
@@ -118,8 +126,35 @@ const CHANGE_MAP: Record<string, string> = {
   background: 'Background — describe required background change (include 🖼️ BACKGROUND section)',
 }
 
+const ROLLEN_NAME: Record<string, string> = {
+  ausgang: 'SOURCE MATERIAL',
+  ziel:    'TARGET REFERENCE (look only)',
+  person:  'THE PERSON (identity)',
+}
+
 function buildImageIndex(settings: ImageSetting[]): string {
-  return settings.map((s, i) => `— IMAGE ${i + 1} — "${s.name}"`).join('\n')
+  return settings.map((s, i) => {
+    const rolle = s.rolle ? ` [${ROLLEN_NAME[s.rolle] ?? s.rolle}]` : ''
+    return `— IMAGE ${i + 1} — "${s.name}"${rolle}`
+  }).join('\n')
+}
+
+/**
+ * Die Rollenregeln im Wortlaut, damit der geschriebene Prompt dieselbe Trennung
+ * kennt wie das Bildmodell danach.
+ */
+function buildRollenBlock(settings: ImageSetting[]): string {
+  const mitRolle = settings.filter((s) => s.rolle && s.rollenRegel)
+  if (mitRolle.length === 0) return ''
+  const zeilen = mitRolle.map((s) => `— IMAGE ${settings.indexOf(s) + 1} (${ROLLEN_NAME[s.rolle!] ?? s.rolle}): ${s.rollenRegel}`)
+  return `\n\n═══════════════════════════════════════════
+IMAGE ROLES — HOW EACH IMAGE MAY BE USED
+═══════════════════════════════════════════
+${zeilen.join('\n')}
+
+Never take the identity of a person, an object's shape or any branding from a
+TARGET REFERENCE. Those come from the SOURCE MATERIAL, however much sharper or
+better lit the target reference is.`
 }
 
 function buildPerImageLocks(settings: ImageSetting[]): string {
@@ -175,6 +210,7 @@ function buildUserMessage(
   const isGeneration = promptMode === 'generation'
   const hasChange = (changeAreas?.length ?? 0) > 0
   const imageIndexBlock = buildImageIndex(imageSettings)
+  const rollenBlock = buildRollenBlock(imageSettings)
   const perImageLocksBlock = buildPerImageLocks(imageSettings)
   const hasAnyLocks = imageSettings.some((s) => s.faceLock || s.objectLock || s.customLock)
 
@@ -252,7 +288,7 @@ When the user references "Bild 2" / "Image 2" / "the second image" — this mean
   return `USE THE UPLOADED PHOTO(S) AS STRICT REFERENCE BASE.
 THIS IS A PHOTO RETOUCH — NOT A NEW IMAGE GENERATION.
 
-${imageRefSection}${locksSection}${changeSection}${userBlock}${instruction}
+${imageRefSection}${rollenBlock}${locksSection}${changeSection}${userBlock}${instruction}
 
 ═══════════════════════════════════════════
 TASK
@@ -380,7 +416,7 @@ interface OpenAIImageResponse {
   error?: { message: string; type?: string; code?: string }
 }
 
-type GenModel = 'pro' | 'openai'
+type GenModel = 'flare' | 'sunburst' | 'openai' | 'pro' | 'flash'
 type OpenAIFormat = 'auto' | 'png' | 'jpeg' | 'webp'
 
 interface GenerateBody {
@@ -389,16 +425,37 @@ interface GenerateBody {
   resolution?: string
   model?: GenModel
   outputFormat?: OpenAIFormat
+  /** Freigestellt ausgeben. Können nur die gpt-image-2.5-Modelle. */
+  transparent?: boolean
   referenceImages?: Array<{ mimeType: string; data: string }>
 }
 
 const GEMINI_RATIOS = new Set(['1:1', '16:9', '9:16', '4:3', '3:4', '4:5', '5:4'])
 
-const GEMINI_MODEL_ID = 'gemini-3-pro-image-preview'
+const GEMINI_MODEL_IDS: Record<'pro' | 'flash', string> = {
+  pro:   'gemini-3-pro-image',     // Nano Banana Pro (nicht mehr -preview)
+  flash: 'gemini-3.1-flash-image', // Nano Banana 2
+}
+
+// Die Modellkennungen, wie sie im Feld `model` der OpenAI-Bild-API stehen.
+const OPENAI_MODEL_IDS: Record<'openai' | 'flare' | 'sunburst', string> = {
+  openai:   'gpt-image-2',
+  flare:    'gpt-image-2.5-flare',
+  sunburst: 'gpt-image-2.5-sunburst',
+}
+
+type OpenAIKey = keyof typeof OPENAI_MODEL_IDS
+
+function istOpenAI(m: GenModel): m is OpenAIKey {
+  return m === 'openai' || m === 'flare' || m === 'sunburst'
+}
 
 const MODEL_LABELS: Record<GenModel, string> = {
-  pro:    'Nano Banana Pro (Gemini 3)',
-  openai: 'OpenAI gpt-image-2',
+  pro:      'Nano Banana Pro (Gemini 3 Pro)',
+  flash:    'Nano Banana 2 (Gemini 3.1 Flash)',
+  openai:   'ChatGPT Image (gpt-image-2)',
+  flare:    'GPT Image 2.5 Flare',
+  sunburst: 'GPT Image 2.5 Sunburst',
 }
 
 const QUALITY_HINT: Record<string, string> = {
@@ -444,16 +501,24 @@ function detectMime(b64: string): string {
 async function callOpenAI(
   body: GenerateBody,
   signal: AbortSignal,
+  modelKey: OpenAIKey,
 ): Promise<{ image: string; prompt: string }> {
   const apiKey = process.env.OPENAI_API_KEY
   if (!apiKey) throw new Error('OPENAI_API_KEY not configured')
 
+  const modelId = OPENAI_MODEL_IDS[modelKey]
   const size = openaiSize(body.aspectRatio, body.resolution)
   const quality = OPENAI_QUALITY[body.resolution ?? '2K'] ?? 'medium'
   const prompt = body.prompt.trim()
   const hasRefs = (body.referenceImages?.length ?? 0) > 0
-  const outputFormat: OpenAIFormat = body.outputFormat ?? 'auto'
-  console.log(`[openai] ratio=${body.aspectRatio} resolution=${body.resolution} → size=${size} quality=${quality} format=${outputFormat} hasRefs=${hasRefs}`)
+  // Freistellen kann nur gpt-image-2.5, und nur in ein Format mit Alphakanal.
+  // JPEG kennt keine Transparenz — dort würde der Wunsch stillschweigend
+  // verpuffen, deshalb wird auf PNG gewechselt statt ihn zu ignorieren.
+  const transparent = Boolean(body.transparent) && (modelKey === 'flare' || modelKey === 'sunburst')
+  const outputFormat: OpenAIFormat = transparent
+    ? (body.outputFormat === 'webp' ? 'webp' : 'png')
+    : (body.outputFormat ?? 'auto')
+  console.log(`[openai] model=${modelId} ratio=${body.aspectRatio} resolution=${body.resolution} → size=${size} quality=${quality} format=${outputFormat} transparent=${transparent} hasRefs=${hasRefs}`)
 
   const headers = { Authorization: `Bearer ${apiKey}` }
 
@@ -461,11 +526,12 @@ async function callOpenAI(
 
   if (hasRefs) {
     const form = new FormData()
-    form.append('model', 'gpt-image-2')
+    form.append('model', modelId)
     form.append('prompt', prompt)
     form.append('size', size)
     form.append('quality', quality)
     if (outputFormat !== 'auto') form.append('output_format', outputFormat)
+    if (transparent) form.append('background', 'transparent')
     form.append('n', '1')
     for (const [i, ref] of (body.referenceImages ?? []).entries()) {
       const bytes = Buffer.from(ref.data, 'base64')
@@ -481,8 +547,9 @@ async function callOpenAI(
       method: 'POST',
       headers: { ...headers, 'Content-Type': 'application/json' },
       body: JSON.stringify({
-        model: 'gpt-image-2', prompt, size, quality,
+        model: modelId, prompt, size, quality,
         ...(outputFormat !== 'auto' ? { output_format: outputFormat } : {}),
+        ...(transparent ? { background: 'transparent' } : {}),
         n: 1,
       }),
       signal,
@@ -504,6 +571,7 @@ async function callOpenAI(
 async function callGemini(
   body: GenerateBody,
   signal: AbortSignal,
+  modelKey: 'pro' | 'flash',
 ): Promise<{ image: string; prompt: string }> {
   const apiKey = process.env.GOOGLE_AI_API_KEY
   if (!apiKey) throw new Error('GOOGLE_AI_API_KEY not configured')
@@ -519,7 +587,7 @@ async function callGemini(
   else if (body.resolution === '2K') imageConfig.imageSize = '2K'
   if (nativeRatio && body.aspectRatio) imageConfig.aspectRatio = body.aspectRatio
 
-  const url = `https://generativelanguage.googleapis.com/v1beta/models/${GEMINI_MODEL_ID}:generateContent?key=${apiKey}`
+  const url = `https://generativelanguage.googleapis.com/v1beta/models/${GEMINI_MODEL_IDS[modelKey]}:generateContent?key=${apiKey}`
   const fetchRes = await fetch(url, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
@@ -553,14 +621,26 @@ app.post('/api/generate', requireAuth, async (req: Request, res: Response) => {
     const body = req.body as GenerateBody
     if (!body.prompt?.trim()) return res.status(400).json({ error: 'Prompt is required' })
 
-    const modelKey: GenModel = body.model === 'openai' ? 'openai' : 'pro'
+    // Unbekanntes fällt ausdrücklich auf die Voreinstellung zurück. Wichtig:
+    // Die Liste muss jedes gültige Modell nennen — stand hier ein Name nicht
+    // drin, landete er stillschweigend bei Gemini und der Nutzer bekam ein Bild
+    // (und eine Rechnung) vom falschen Anbieter, ohne dass irgendwo ein Fehler
+    // auftauchte. Kommt ein Modell dazu, gehört es HIER hinein.
+    const ALLE_MODELLE: GenModel[] = ['flare', 'sunburst', 'openai', 'pro', 'flash']
+    const gewuenscht = body.model as GenModel | undefined
+    const modelKey: GenModel = ALLE_MODELLE.includes(gewuenscht as GenModel)
+      ? (gewuenscht as GenModel)
+      : 'flare'
+    if (gewuenscht && gewuenscht !== modelKey) {
+      console.warn(`[generate] unbekanntes Modell "${gewuenscht}" — Rückfall auf ${modelKey}`)
+    }
     const abortController = new AbortController()
     const abortTimeout = setTimeout(() => abortController.abort(), 270_000)
 
     try {
-      const result = modelKey === 'openai'
-        ? await callOpenAI(body, abortController.signal)
-        : await callGemini(body, abortController.signal)
+      const result = istOpenAI(modelKey)
+        ? await callOpenAI(body, abortController.signal, modelKey)
+        : await callGemini(body, abortController.signal, modelKey)
 
       res.json({ image: result.image, prompt: result.prompt, model: MODEL_LABELS[modelKey] })
     } finally {

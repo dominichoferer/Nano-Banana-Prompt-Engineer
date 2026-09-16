@@ -84,7 +84,7 @@ export default function PromptDisplay({ prompt, onChange, status, images }: Prop
             w-full min-h-[420px] resize-none rounded-2xl
             bg-cream-50 border border-cream-200 text-ink-900
             font-mono text-xs leading-relaxed p-4
-            focus:outline-none focus:border-banana-400 focus:ring-2 focus:ring-banana-200
+            focus:outline-none focus:border-heron-400 focus:ring-2 focus:ring-heron-200
             placeholder:text-ink-300 whitespace-pre shadow-card
             transition-all duration-200
             ${status === 'analyzing' ? 'typing-cursor' : ''}
@@ -94,9 +94,9 @@ export default function PromptDisplay({ prompt, onChange, status, images }: Prop
         />
 
         {status === 'analyzing' && (
-          <div className="absolute top-3 right-3 flex items-center gap-1.5 bg-white/90 px-2.5 py-1.5 rounded-lg border border-banana-200 shadow-card">
-            <div className="w-1.5 h-1.5 rounded-full bg-banana-500 animate-pulse" />
-            <span className="text-banana-600 text-xs font-medium">Claude schreibt…</span>
+          <div className="absolute top-3 right-3 flex items-center gap-1.5 bg-white/90 px-2.5 py-1.5 rounded-lg border border-heron-200 shadow-card">
+            <div className="w-1.5 h-1.5 rounded-full bg-heron-500 animate-pulse" />
+            <span className="text-heron-600 text-xs font-medium">Claude schreibt…</span>
           </div>
         )}
       </div>

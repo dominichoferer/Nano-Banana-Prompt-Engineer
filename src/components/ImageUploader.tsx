@@ -14,6 +14,7 @@ function createUploadedImage(file: File): UploadedImage {
     preview: URL.createObjectURL(file),
     name: file.name,
     size: file.size,
+    rolle: 'ausgang',
     faceLock: false,
     objectLock: false,
     customLock: '',
@@ -92,7 +93,7 @@ export default function ImageUploader({ images, onChange, disabled }: Props) {
           border-2 border-dashed border-[#3a3a3a] rounded-2xl
           min-h-[180px] cursor-pointer select-none
           transition-all duration-200
-          ${disabled ? 'opacity-40 cursor-not-allowed' : 'hover:border-banana-500/60 hover:bg-banana-500/5'}
+          ${disabled ? 'opacity-40 cursor-not-allowed' : 'hover:border-heron-500/60 hover:bg-heron-500/5'}
         `}
       >
         <input
@@ -107,12 +108,11 @@ export default function ImageUploader({ images, onChange, disabled }: Props) {
 
         <div className="flex flex-col items-center gap-2 p-6 text-center">
           <div className="w-14 h-14 rounded-2xl bg-[#1e1e1e] flex items-center justify-center text-3xl">
-            🖼️
           </div>
           <div>
             <p className="text-white font-medium text-sm">
               Drop images here or{' '}
-              <span className="text-banana-500 underline underline-offset-2">browse</span>
+              <span className="text-heron-500 underline underline-offset-2">browse</span>
             </p>
             <p className="text-dark-400 text-xs mt-1">
               JPEG, PNG, WebP, GIF · max 20 MB each · up to 10 images
@@ -173,7 +173,7 @@ export default function ImageUploader({ images, onChange, disabled }: Props) {
                 aspect-square rounded-xl border-2 border-dashed border-[#3a3a3a]
                 flex flex-col items-center justify-center gap-1
                 transition-all duration-200
-                ${disabled ? 'opacity-40 cursor-not-allowed' : 'hover:border-banana-500/60 hover:bg-banana-500/5 cursor-pointer'}
+                ${disabled ? 'opacity-40 cursor-not-allowed' : 'hover:border-heron-500/60 hover:bg-heron-500/5 cursor-pointer'}
               `}
             >
               <span className="text-2xl">+</span>
