@@ -61,6 +61,31 @@ function compressImage(file: File): Promise<File> {
   })
 }
 
+/**
+ * Der Stand eines Auftrags, so wie er an ein Duplikat weitergereicht wird.
+ * Absichtlich lose typisiert: Sonst müsste jedes neue Feld im Panel an drei
+ * Stellen nachgetragen werden, und beim Vergessen fiele es niemandem auf.
+ */
+type JobVorlage = Record<string, unknown>
+
+/** Wert aus der Vorlage, sonst der Standard. Der Typ kommt vom Standard. */
+function ausVorlage<T>(v: JobVorlage | undefined, feld: string, standard: T): T {
+  return v && feld in v ? (v[feld] as T) : standard
+}
+
+/**
+ * Bilder für ein Duplikat neu anlegen. Die Datei selbst ist unveränderlich und
+ * darf geteilt werden, die Vorschau-Adresse nicht: Wird sie im einen Auftrag
+ * freigegeben, wäre das Bild im anderen kaputt.
+ */
+function kopiereBilder(liste: UploadedImage[]): UploadedImage[] {
+  return liste.map((b) => ({
+    ...b,
+    id: `${Date.now()}-${Math.random().toString(36).slice(2)}`,
+    preview: URL.createObjectURL(b.file),
+  }))
+}
+
 function createUploadedImage(file: File): UploadedImage {
   return {
     id: `${Date.now()}-${Math.random().toString(36).slice(2)}`,
@@ -265,21 +290,24 @@ function UploadZone({
 
 // ── Job Panel (self-contained per-job state + UI) ─────────────────────────────
 function JobPanel({
-  onAdd,
-  onRemove,
-  canRemove,
+  vorlage,
+  onAbzug,
 }: {
-  onAdd: () => void
-  onRemove: () => void
-  canRemove: boolean
+  /** Stand eines anderen Auftrags, von dem dieser hier abgezogen wurde. */
+  vorlage?: JobVorlage
+  /** Meldet dem Elternteil, wie sich der aktuelle Stand abfragen lässt. */
+  onAbzug?: (lies: () => JobVorlage) => void
 }) {
-  const [images, setImages] = useState<UploadedImage[]>([])
-  const [userDescription, setUserDescription] = useState('')
-  const [promptMode, setPromptMode] = useState<PromptMode>('retouch')
-  const [changeAreas, setChangeAreas] = useState<FocusArea[]>([])
-  const [mockupType, setMockupType] = useState<MockupType | ''>('')
-  const [mockupEnvironment, setMockupEnvironment] = useState<'light' | 'dark' | ''>('')
-  const [prompt, setPrompt] = useState('')
+  const v = vorlage
+  const [images, setImages] = useState<UploadedImage[]>(
+    () => v ? kopiereBilder(ausVorlage<UploadedImage[]>(v, 'images', [])) : [])
+  const [userDescription, setUserDescription] = useState(() => ausVorlage(v, 'userDescription', ''))
+  const [promptMode, setPromptMode] = useState<PromptMode>(() => ausVorlage<PromptMode>(v, 'promptMode', 'retouch'))
+  const [changeAreas, setChangeAreas] = useState<FocusArea[]>(() => ausVorlage<FocusArea[]>(v, 'changeAreas', []))
+  const [mockupType, setMockupType] = useState<MockupType | ''>(() => ausVorlage<MockupType | ''>(v, 'mockupType', ''))
+  const [mockupEnvironment, setMockupEnvironment] = useState<'light' | 'dark' | ''>(
+    () => ausVorlage<'light' | 'dark' | ''>(v, 'mockupEnvironment', ''))
+  const [prompt, setPrompt] = useState(() => ausVorlage(v, 'prompt', ''))
   const [analysisStatus, setAnalysisStatus] = useState<AnalysisStatus>('idle')
   const [analysisError, setAnalysisError] = useState<string | null>(null)
   const [generationStatus, setGenerationStatus] = useState<GenerationStatus>('idle')
@@ -292,16 +320,25 @@ function JobPanel({
   // Wichtig: Familie und gewähltes Modell sind GETRENNTER State. Läge nur das
   // aktive Modell im State, ginge beim Wechsel der Familie die Modellwahl in
   // der anderen jedes Mal verloren.
-  const [aktiveFamilie, setAktiveFamilie] = useState<GenFamilie>(familieVon(STANDARD_MODELL))
+  const [aktiveFamilie, setAktiveFamilie] = useState<GenFamilie>(
+    () => ausVorlage<GenFamilie>(v, 'aktiveFamilie', familieVon(STANDARD_MODELL)))
   const [familienModell, setFamilienModell] = useState<Record<GenFamilie, GenModel>>(
-    { gpt: STANDARD_MODELL, nano: 'pro' })
+    () => ausVorlage<Record<GenFamilie, GenModel>>(v, 'familienModell', { gpt: STANDARD_MODELL, nano: 'pro' }))
   const selectedModel = familienModell[aktiveFamilie]
-  const [selectedResolution, setSelectedResolution] = useState<'1K' | '2K' | '4K' | 'auto'>('2K')
-  const [selectedAspectRatio, setSelectedAspectRatio] = useState('1:1')
-  const [selectedOutputFormat, setSelectedOutputFormat] = useState<OpenAIFormat>('auto')
+  const [selectedResolution, setSelectedResolution] = useState<'1K' | '2K' | '4K' | 'auto'>(
+    () => ausVorlage<'1K' | '2K' | '4K' | 'auto'>(v, 'selectedResolution', '2K'))
+  const [selectedAspectRatio, setSelectedAspectRatio] = useState(() => ausVorlage(v, 'selectedAspectRatio', '1:1'))
+  const [selectedOutputFormat, setSelectedOutputFormat] = useState<OpenAIFormat>(
+    () => ausVorlage<OpenAIFormat>(v, 'selectedOutputFormat', 'auto'))
   // Freistellen können nur die gpt-image-2.5-Modelle. Der Schalter verschwindet
   // bei allen anderen, statt still wirkungslos zu bleiben.
-  const [transparent, setTransparent] = useState(false)
+  const [transparent, setTransparent] = useState(() => ausVorlage(v, 'transparent', false))
+  // Mehrere Bilder aus demselben Prompt, zum Auswählen. Bildmodelle sind nicht
+  // deterministisch — der zweite Anlauf ist oft der bessere, und nebeneinander
+  // sieht man das sofort.
+  const [variantCount, setVariantCount] = useState<1 | 2 | 3>(() => ausVorlage<1 | 2 | 3>(v, 'variantCount', 1))
+  const [genResults, setGenResults] = useState<Array<{ label: string; image: string }>>([])
+  const [genProgress, setGenProgress] = useState<{ done: number; total: number } | null>(null)
 
   const availableRatios = ratiosForModel(selectedModel)
   const availableResolutions: Array<'auto' | '1K' | '2K' | '4K'> =
@@ -435,6 +472,7 @@ function JobPanel({
   const handleGenerate = useCallback(async () => {
     if (!prompt.trim()) return
     setGenerationStatus('generating'); setGenerationError(null); setGeneratedImage(null)
+    setGenResults([]); setGenProgress({ done: 0, total: variantCount })
     try {
       const bilder = begrenze(geordneteBilder)
       const referenceImages = await Promise.all(
@@ -461,27 +499,63 @@ function JobPanel({
       const klausel = identitaetsKlausel(nummernMit('ausgang'), nummernMit('ziel'))
       const volltext = [legende, prompt.trim(), klausel].filter(Boolean).join('\n\n')
 
-      const res = await fetch('/api/generate', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          prompt: volltext, model: selectedModel, resolution: selectedResolution, aspectRatio: selectedAspectRatio,
-          outputFormat: istGpt(selectedModel) ? selectedOutputFormat : undefined,
-          transparent: kannTransparenz(selectedModel) && transparent ? true : undefined,
-          referenceImages: referenceImages.length > 0 ? referenceImages : undefined,
-        }),
-      })
-      if (!res.ok) {
-        const err = await res.json().catch(() => ({ error: res.statusText }))
-        throw new Error(err.error || `Server error: ${res.status}`)
+      // Nacheinander statt parallel: So steht das erste Bild sofort da, jeder
+      // einzelne Aufruf bleibt im Zeitlimit der Vercel-Function, und wir laufen
+      // nicht in die Mengenbegrenzung der Anbieter.
+      const fertig: Array<{ label: string; image: string }> = []
+      const fehler: string[] = []
+      for (let v = 1; v <= variantCount; v++) {
+        try {
+          const res = await fetch('/api/generate', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+              prompt: volltext, model: selectedModel, resolution: selectedResolution, aspectRatio: selectedAspectRatio,
+              outputFormat: istGpt(selectedModel) ? selectedOutputFormat : undefined,
+              transparent: kannTransparenz(selectedModel) && transparent ? true : undefined,
+              referenceImages: referenceImages.length > 0 ? referenceImages : undefined,
+            }),
+          })
+          if (!res.ok) {
+            const err = await res.json().catch(() => ({ error: res.statusText }))
+            throw new Error(err.error || `Server error: ${res.status}`)
+          }
+          const data = await res.json()
+          fertig.push({ label: variantCount > 1 ? `Variante ${v}` : 'Ergebnis', image: data.image })
+          setGenResults([...fertig])
+          // Das erste fertige Bild wird gleich das aktive, damit man nicht auf
+          // die ganze Serie warten muss.
+          if (fertig.length === 1) { setGeneratedImage(data.image); setGeneratedModel(data.model) }
+        } catch (e) {
+          fehler.push(`Variante ${v}: ${e instanceof Error ? e.message : 'Fehler'}`)
+        }
+        setGenProgress({ done: fertig.length + fehler.length, total: variantCount })
       }
-      const data = await res.json()
-      setGeneratedImage(data.image); setGeneratedModel(data.model); setGenerationStatus('done')
+      if (fertig.length === 0) throw new Error(fehler.join(' · ') || 'Generierung fehlgeschlagen')
+      // Teilerfolg ist kein Fehlschlag: Die fertigen Bilder bleiben stehen, der
+      // Rest wird benannt.
+      setGenerationError(fehler.length > 0 ? `${fehler.length} von ${variantCount} fehlgeschlagen — ${fehler.join(' · ')}` : null)
+      setGenerationStatus('done')
     } catch (err) {
       setGenerationError(err instanceof Error ? err.message : 'Generierung fehlgeschlagen')
       setGenerationStatus('error')
+    } finally {
+      setGenProgress(null)
     }
-  }, [prompt, selectedModel, selectedResolution, selectedAspectRatio, selectedOutputFormat, transparent, images])
+  }, [prompt, selectedModel, selectedResolution, selectedAspectRatio, selectedOutputFormat,
+      transparent, variantCount, geordneteBilder])
+
+  // Dem Elternteil einen Lesezugriff auf den aktuellen Stand geben. Nur so
+  // lässt sich ein Auftrag duplizieren, ohne den gesamten Zustand nach oben zu
+  // ziehen. Bewusst OHNE Ergebnisse — ein Duplikat startet mit leerer Ausgabe,
+  // sonst sähe es aus, als wäre schon etwas gerechnet worden.
+  const standRef = useRef<() => JobVorlage>(() => ({}))
+  standRef.current = () => ({
+    images, userDescription, promptMode, changeAreas, mockupType, mockupEnvironment, prompt,
+    aktiveFamilie, familienModell, selectedResolution, selectedAspectRatio, selectedOutputFormat,
+    transparent, variantCount,
+  })
+  useEffect(() => { onAbzug?.(() => standRef.current()) }, [onAbzug])
 
   const canAnalyze = (images.length > 0 || promptMode === 'generation') && analysisStatus !== 'analyzing'
   const canGenerate = prompt.trim().length > 0 && generationStatus !== 'generating'
@@ -501,27 +575,8 @@ function JobPanel({
       {/* Mode Toggle + Settings */}
       <div className="card p-5 flex flex-col gap-5">
 
-        {/* Mode header with + and × */}
         <div className="flex flex-col gap-2">
-          <div className="flex items-center justify-between">
-            <span className="label-section">Modus</span>
-            <div className="flex items-center gap-2">
-              <button onClick={onAdd} title="Neuen Auftrag hinzufügen"
-                className="w-7 h-7 rounded-full bg-heron-100 text-heron-600 hover:bg-heron-500 hover:text-white flex items-center justify-center transition-all duration-150 shadow-sm">
-                <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2.5} d="M12 4v16m8-8H4" />
-                </svg>
-              </button>
-              {canRemove && (
-                <button onClick={onRemove} title="Diesen Auftrag entfernen"
-                  className="w-7 h-7 rounded-full bg-red-50 text-red-400 hover:bg-red-500 hover:text-white flex items-center justify-center transition-all duration-150 shadow-sm">
-                  <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2.5} d="M6 18L18 6M6 6l12 12" />
-                  </svg>
-                </button>
-              )}
-            </div>
-          </div>
+          <span className="label-section">Modus</span>
           <div className="bg-cream-100 rounded-xl p-1 flex gap-1">
             <button onClick={() => setPromptMode('retouch')} className={`mode-btn ${promptMode === 'retouch' ? 'mode-btn-active' : 'mode-btn-inactive'}`}>
               <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -681,7 +736,54 @@ function JobPanel({
               setGeneratedModel(undefined)
               setGenerationStatus('idle')
               setGenerationError(null)
+              setGenResults([])
             }} />
+
+          {/* Fortschritt über die Serie. Ohne ihn sieht es bei drei Varianten
+              aus, als hinge das Werkzeug. */}
+          {genProgress && genProgress.total > 1 && (
+            <div className="flex items-center gap-2">
+              <div className="flex-1 h-1 bg-cream-200">
+                <div className="h-full bg-heron-500 transition-all duration-300"
+                  style={{ width: `${(genProgress.done / genProgress.total) * 100}%` }} />
+              </div>
+              <span className="text-[11px] font-sans text-ink-400 tabular-nums">
+                {genProgress.done}/{genProgress.total}
+              </span>
+            </div>
+          )}
+
+          {/* Die Serie zum Auswählen. Ein Klick macht ein Bild zum aktiven —
+              alles Weitere (Herunterladen, Weiterverarbeiten) bezieht sich
+              dann darauf. */}
+          {genResults.length > 1 && (
+            <div className="flex flex-col gap-2 animate-fade-in">
+              <span className="label-section">Ergebnisse ({genResults.length})</span>
+              <div className="grid grid-cols-2 sm:grid-cols-3 gap-2">
+                {genResults.map((r, i) => (
+                  <div key={`${r.label}-${i}`} className="group relative overflow-hidden border border-cream-200 bg-cream-100">
+                    <button onClick={() => setGeneratedImage(r.image)} className="block w-full"
+                      title={`${r.label} als aktives Bild setzen`}>
+                      <img src={r.image} alt={r.label} className="w-full aspect-square object-cover" />
+                    </button>
+                    <div className="absolute inset-x-0 bottom-0 flex items-center justify-between gap-1 bg-ink-900/70 px-2 py-1.5">
+                      <span className="text-white text-[11px] font-sans truncate">{r.label}</span>
+                      <a href={r.image} download={`heron-${r.label.toLowerCase().replace(/[^a-z0-9]+/g, '-')}-${Date.now()}.png`}
+                        title="Herunterladen"
+                        className="shrink-0 text-white/80 hover:text-white transition-colors">
+                        <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2.5} d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4" />
+                        </svg>
+                      </a>
+                    </div>
+                    {generatedImage === r.image && (
+                      <div className="absolute inset-0 ring-2 ring-heron-500 pointer-events-none" />
+                    )}
+                  </div>
+                ))}
+              </div>
+            </div>
+          )}
           <div className="grid grid-cols-2 gap-3">
             <div className="flex flex-col gap-1.5">
               <span className="label-section">Modell</span>
@@ -732,6 +834,24 @@ function JobPanel({
                 })}
               </div>
             </div>
+            <div className="flex flex-col gap-3">
+            <div className="flex flex-col gap-1.5">
+              <span className="label-section">Varianten</span>
+              <div className="bg-cream-100 rounded-xl p-1 flex gap-1">
+                {([1, 2, 3] as const).map((n) => (
+                  <button key={n} onClick={() => setVariantCount(n)}
+                    title={n === 1 ? 'Ein Bild' : `${n} Bilder aus demselben Prompt — zum Auswählen`}
+                    className={`mode-btn text-xs py-2 ${variantCount === n ? 'mode-btn-active' : 'mode-btn-inactive'}`}>
+                    {n}×
+                  </button>
+                ))}
+              </div>
+              <span className="text-[10px] font-sans text-ink-400 leading-snug px-0.5">
+                {variantCount === 1
+                  ? 'Ein Bild.'
+                  : `${variantCount} Aufrufe, also auch ${variantCount}× die Kosten.`}
+              </span>
+            </div>
             <div className="flex flex-col gap-1.5">
               <span className="label-section">Auflösung</span>
               <div className="bg-cream-100 rounded-xl p-1 flex gap-1">
@@ -741,6 +861,7 @@ function JobPanel({
                   </button>
                 ))}
               </div>
+            </div>
             </div>
           </div>
           <div className="flex flex-col gap-1.5">
@@ -800,7 +921,9 @@ function JobPanel({
                 <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                   <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 16l4.586-4.586a2 2 0 012.828 0L16 16m-2-2l1.586-1.586a2 2 0 012.828 0L20 14m-6-6h.01M6 20h12a2 2 0 002-2V6a2 2 0 00-2-2H6a2 2 0 00-2 2v12a2 2 0 002 2z" />
                 </svg>
-                mit {modellDef(selectedModel).label} generieren
+                {variantCount > 1
+                  ? `${variantCount} Bilder mit ${modellDef(selectedModel).label} generieren`
+                  : `mit ${modellDef(selectedModel).label} generieren`}
               </>
             )}
           </button>
@@ -963,6 +1086,7 @@ export default function App() {
 
 function AppMain({ userEmail, authEnabled, onLogout }: { userEmail: string | null; authEnabled: boolean; onLogout: () => void }) {
   const [jobs, setJobs] = useState<number[]>([Date.now()])
+  const [aktiverJob, setAktiverJob] = useState<number | null>(null)
   const [quickOpen, setQuickOpen] = useState(false)
   const [quickPrompt, setQuickPrompt] = useState('')
   const [quickFamilie, setQuickFamilie] = useState<GenFamilie>(familieVon(STANDARD_MODELL))
@@ -973,6 +1097,9 @@ function AppMain({ userEmail, authEnabled, onLogout }: { userEmail: string | nul
   const [quickAspectRatio, setQuickAspectRatio] = useState('1:1')
   const [quickOutputFormat, setQuickOutputFormat] = useState<OpenAIFormat>('auto')
   const [quickTransparent, setQuickTransparent] = useState(false)
+  const [quickVariants, setQuickVariants] = useState<1 | 2 | 3>(1)
+  const [quickResults, setQuickResults] = useState<string[]>([])
+  const [quickProgress, setQuickProgress] = useState<{ done: number; total: number } | null>(null)
 
   const quickRatios = ratiosForModel(quickModel)
   const quickResolutions: Array<'auto' | '1K' | '2K' | '4K'> =
@@ -995,33 +1122,89 @@ function AppMain({ userEmail, authEnabled, onLogout }: { userEmail: string | nul
   const [quickError, setQuickError] = useState<string | null>(null)
   const [quickImage, setQuickImage] = useState<string | null>(null)
 
-  const addJob = useCallback(() => setJobs((prev) => [...prev, Date.now()]), [])
-  const removeJob = useCallback((id: number) => setJobs((prev) => prev.filter((j) => j !== id)), [])
+  // Je Auftrag ein Lesezugriff auf seinen Stand, vom Panel selbst gemeldet.
+  // So lässt sich duplizieren, ohne den gesamten Zustand nach oben zu ziehen.
+  const abzuege = useRef(new Map<number, () => JobVorlage>())
+  const [vorlagen, setVorlagen] = useState<Record<number, JobVorlage>>({})
+
+  // Ein neuer oder duplizierter Auftrag wird gleich der offene Reiter — sonst
+  // müsste man nach dem Klick noch einmal klicken.
+  const addJob = useCallback(() => {
+    const id = Date.now()
+    setJobs((prev) => [...prev, id])
+    setAktiverJob(id)
+  }, [])
+
+  const duplicateJob = useCallback((id: number) => {
+    const lies = abzuege.current.get(id)
+    if (!lies) return
+    const neu = Date.now()
+    setVorlagen((prev) => ({ ...prev, [neu]: lies() }))
+    // Das Duplikat direkt neben das Original, nicht ans Ende.
+    setJobs((prev) => {
+      const i = prev.indexOf(id)
+      return [...prev.slice(0, i + 1), neu, ...prev.slice(i + 1)]
+    })
+    setAktiverJob(neu)
+  }, [])
+
+  const removeJob = useCallback((id: number) => {
+    setJobs((prev) => {
+      const rest = prev.filter((j) => j !== id)
+      setAktiverJob((offen) => {
+        if (offen !== id) return offen
+        // Auf den Nachbarn springen statt ins Leere.
+        const i = prev.indexOf(id)
+        return rest[Math.min(i, rest.length - 1)] ?? null
+      })
+      return rest
+    })
+    abzuege.current.delete(id)
+  }, [])
+
+  const offenerJob = aktiverJob !== null && jobs.includes(aktiverJob) ? aktiverJob : jobs[0]
 
   const handleQuickGenerate = useCallback(async () => {
     if (!quickPrompt.trim()) return
     setQuickStatus('generating'); setQuickError(null); setQuickImage(null)
-    try {
-      const res = await fetch('/api/generate', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          prompt: quickPrompt.trim(), model: quickModel, resolution: quickResolution, aspectRatio: quickAspectRatio,
-          outputFormat: istGpt(quickModel) ? quickOutputFormat : undefined,
-          transparent: kannTransparenz(quickModel) && quickTransparent ? true : undefined,
-        }),
-      })
-      if (!res.ok) {
-        const err = await res.json().catch(() => ({ error: res.statusText }))
-        throw new Error(err.error || `Server error: ${res.status}`)
+    setQuickResults([]); setQuickProgress({ done: 0, total: quickVariants })
+    const fertig: string[] = []
+    const fehler: string[] = []
+    // Nacheinander, damit das erste Bild sofort dasteht.
+    for (let v = 1; v <= quickVariants; v++) {
+      try {
+        const res = await fetch('/api/generate', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            prompt: quickPrompt.trim(), model: quickModel, resolution: quickResolution, aspectRatio: quickAspectRatio,
+            outputFormat: istGpt(quickModel) ? quickOutputFormat : undefined,
+            transparent: kannTransparenz(quickModel) && quickTransparent ? true : undefined,
+          }),
+        })
+        if (!res.ok) {
+          const err = await res.json().catch(() => ({ error: res.statusText }))
+          throw new Error(err.error || `Server error: ${res.status}`)
+        }
+        const data = await res.json()
+        fertig.push(data.image)
+        setQuickResults([...fertig])
+        if (fertig.length === 1) setQuickImage(data.image)
+      } catch (e) {
+        fehler.push(`Variante ${v}: ${e instanceof Error ? e.message : 'Fehler'}`)
       }
-      const data = await res.json()
-      setQuickImage(data.image); setQuickStatus('done')
-    } catch (err) {
-      setQuickError(err instanceof Error ? err.message : 'Fehler')
-      setQuickStatus('error')
+      setQuickProgress({ done: fertig.length + fehler.length, total: quickVariants })
     }
-  }, [quickPrompt, quickModel, quickResolution, quickAspectRatio, quickOutputFormat, quickTransparent])
+    setQuickProgress(null)
+    if (fertig.length === 0) {
+      setQuickError(fehler.join(' · ') || 'Fehler')
+      setQuickStatus('error')
+      return
+    }
+    setQuickError(fehler.length > 0 ? `${fehler.length} von ${quickVariants} fehlgeschlagen — ${fehler.join(' · ')}` : null)
+    setQuickStatus('done')
+  }, [quickPrompt, quickModel, quickResolution, quickAspectRatio, quickOutputFormat,
+      quickTransparent, quickVariants])
 
   return (
     <div className="min-h-dvh flex flex-col bg-cream-50">
@@ -1076,7 +1259,9 @@ function AppMain({ userEmail, authEnabled, onLogout }: { userEmail: string | nul
       </div>
 
       {/* ── Main ──────────────────────────────────────────────────────────── */}
-      <main className={`${jobs.length > 1 ? 'max-w-7xl' : 'max-w-4xl'} mx-auto w-full px-5 py-8 flex flex-col gap-6`}>
+      {/* Feste Breite: Es ist immer nur ein Auftrag offen, die Seite soll beim
+          Reiterwechsel nicht springen. */}
+      <main className="max-w-4xl mx-auto w-full px-5 py-8 flex flex-col gap-6">
 
         {/* Quick Generator */}
         {quickOpen && (
@@ -1133,6 +1318,18 @@ function AppMain({ userEmail, authEnabled, onLogout }: { userEmail: string | nul
                 </div>
               </div>
               <div className="flex flex-col gap-1">
+                <span className="label-section text-[10px]">Varianten</span>
+                <div className="bg-cream-100 rounded-xl p-0.5 flex gap-0.5">
+                  {([1, 2, 3] as const).map((n) => (
+                    <button key={n} onClick={() => setQuickVariants(n)}
+                      title={n === 1 ? 'Ein Bild' : `${n} Bilder aus demselben Prompt — zum Auswählen`}
+                      className={`mode-btn text-xs py-1.5 ${quickVariants === n ? 'mode-btn-active' : 'mode-btn-inactive'}`}>
+                      {n}×
+                    </button>
+                  ))}
+                </div>
+              </div>
+              <div className="flex flex-col gap-1">
                 <span className="label-section text-[10px]">Auflösung</span>
                 <div className="bg-cream-100 rounded-xl p-0.5 flex gap-0.5">
                   {quickResolutions.map((r) => (
@@ -1181,6 +1378,17 @@ function AppMain({ userEmail, authEnabled, onLogout }: { userEmail: string | nul
             {quickStatus === 'error' && quickError && (
               <div className="bg-red-50 border border-red-200 rounded-xl p-3 text-red-600 text-xs animate-scale-in">{quickError}</div>
             )}
+            {quickProgress && quickProgress.total > 1 && (
+              <div className="flex items-center gap-2">
+                <div className="flex-1 h-1 bg-cream-200">
+                  <div className="h-full bg-heron-500 transition-all duration-300"
+                    style={{ width: `${(quickProgress.done / quickProgress.total) * 100}%` }} />
+                </div>
+                <span className="text-[11px] font-sans text-ink-400 tabular-nums">
+                  {quickProgress.done}/{quickProgress.total}
+                </span>
+              </div>
+            )}
             {quickImage && (
               <div className="relative rounded-2xl overflow-hidden bg-cream-100 animate-scale-in">
                 <img src={quickImage} alt="Generated" className="w-full object-contain max-h-[500px]" />
@@ -1204,17 +1412,76 @@ function AppMain({ userEmail, authEnabled, onLogout }: { userEmail: string | nul
                 </div>
               </div>
             )}
+
+            {/* Die Serie zum Auswählen — ein Klick macht ein Bild zum aktiven. */}
+            {quickResults.length > 1 && (
+              <div className="flex flex-col gap-1 animate-fade-in">
+                <span className="label-section text-[10px]">Ergebnisse ({quickResults.length})</span>
+                <div className="grid grid-cols-3 gap-1.5">
+                  {quickResults.map((bild, i) => (
+                    <button key={i} onClick={() => setQuickImage(bild)}
+                      title={`Variante ${i + 1} als aktives Bild setzen`}
+                      className="relative block overflow-hidden border border-cream-200 bg-cream-100">
+                      <img src={bild} alt={`Variante ${i + 1}`} className="w-full aspect-square object-cover" />
+                      <span className="absolute inset-x-0 bottom-0 bg-ink-900/70 text-white text-[10px] font-sans py-1">
+                        Variante {i + 1}
+                      </span>
+                      {quickImage === bild && (
+                        <span className="absolute inset-0 ring-2 ring-heron-500 pointer-events-none" />
+                      )}
+                    </button>
+                  ))}
+                </div>
+              </div>
+            )}
           </div>
         )}
 
-        {/* Job Panels — side by side when multiple */}
-        <div className={`flex gap-5 items-start ${jobs.length > 1 ? 'flex-row' : 'flex-col'}`}>
+        {/* Aufträge als Reiter. Alle Panels bleiben im Baum — ausgeblendet
+            statt entfernt, sonst wären beim Zurückspringen Bilder, Prompt und
+            Einstellungen weg. */}
+        <div className="flex flex-col gap-0">
+          <div className="flex items-stretch gap-px bg-cream-200 border-b-2 border-cream-200 overflow-x-auto">
+            {jobs.map((id, i) => (
+              <button key={id} onClick={() => setAktiverJob(id)}
+                className={`group flex items-center gap-2 px-4 py-2.5 font-display font-bold uppercase tracking-wide text-sm whitespace-nowrap transition-colors duration-150
+                  ${id === offenerJob ? 'bg-heron-500 text-white' : 'bg-white text-ink-400 hover:text-ink-800 hover:bg-cream-50'}`}>
+                Auftrag {i + 1}
+                {jobs.length > 1 && (
+                  <span role="button" tabIndex={0} title="Diesen Auftrag schließen"
+                    onClick={(e) => { e.stopPropagation(); removeJob(id) }}
+                    onKeyDown={(e) => { if (e.key === 'Enter') { e.stopPropagation(); removeJob(id) } }}
+                    className={`-mr-1.5 w-5 h-5 flex items-center justify-center transition-colors duration-150
+                      ${id === offenerJob ? 'text-white/60 hover:text-white hover:bg-heron-700' : 'text-ink-300 hover:text-white hover:bg-red-500'}`}>
+                    <svg className="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={3} d="M6 18L18 6M6 6l12 12" />
+                    </svg>
+                  </span>
+                )}
+              </button>
+            ))}
+            <button onClick={() => duplicateJob(offenerJob)} title="Offenen Auftrag duplizieren — Bilder und Einstellungen werden übernommen, die Ergebnisse nicht"
+              className="px-3 py-2.5 bg-white text-ink-400 hover:bg-ink-800 hover:text-white transition-colors duration-150 flex items-center"
+              aria-label="Offenen Auftrag duplizieren">
+              <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2}
+                  d="M8 16H6a2 2 0 01-2-2V6a2 2 0 012-2h8a2 2 0 012 2v2m-6 12h8a2 2 0 002-2v-8a2 2 0 00-2-2h-8a2 2 0 00-2 2v8a2 2 0 002 2z" />
+              </svg>
+            </button>
+            <button onClick={addJob} title="Weiteren Auftrag öffnen"
+              className="px-4 py-2.5 bg-white text-heron-600 hover:bg-heron-500 hover:text-white transition-colors duration-150 flex items-center"
+              aria-label="Weiteren Auftrag öffnen">
+              <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2.5} d="M12 4v16m8-8H4" />
+              </svg>
+            </button>
+            <div className="flex-1 bg-white" />
+          </div>
           {jobs.map((id) => (
-            <div key={id} className={jobs.length > 1 ? 'flex-1 min-w-0' : 'w-full'}>
+            <div key={id} hidden={id !== offenerJob} className="pt-5">
               <JobPanel
-                onAdd={addJob}
-                onRemove={() => removeJob(id)}
-                canRemove={jobs.length > 1}
+                vorlage={vorlagen[id]}
+                onAbzug={(lies) => { abzuege.current.set(id, lies) }}
               />
             </div>
           ))}
