@@ -97,8 +97,24 @@ RULES
    lighting are REBUILT to match it, while the subject's identity stays with the source
    material. Do not refuse this as "not a retouch"; write the new crop, background and light out
    in full under "changes", and the face under "preserve".
-9. task "mockup": the artwork from the upload goes ONTO the object, following its perspective,
-   curvature, folds and lighting. Never redraw, re-letter or restyle the artwork.
+9. task "mockup" — THE ARTWORK IS DATA, NOT INSPIRATION. The uploaded pages go ONTO the object,
+   following its perspective, curvature, folds and lighting. Everything printed on them is
+   reproduced exactly as supplied:
+   — Every word of text, character for character, in the same language, the same typeface, the
+     same size relationship and the same position. Do not re-typeset, re-letter, translate,
+     shorten, correct, complete or invent a single word. Placeholder text such as "Lorem ipsum"
+     stays as it is.
+   — Every logo, mark, rule, bar, icon, photograph, colour field and their exact positions.
+   — The page geometry: margins, columns, the position of the fold.
+   This is the most common failure of a mockup brief: a plausible-looking brochure with invented
+   content. If any text would come out unreadable at the chosen size, say so in "negative" and
+   keep the layout — never substitute readable filler.
+   Write ONE "preserve" entry per supplied page, with tolerance "pixel_exact", naming that page
+   by IMAGE number and stating that its text and marks are reproduced verbatim.
+9b. MULTIPLE PAGES: when several pages of the same document are attached, say in "directive"
+   which page goes where on the object — front, back, inner spread, visible page. Never merge
+   two pages into one invented page, and never repeat one page on every visible surface unless
+   the brief says so. A page labelled as the title page belongs on the front.
 10. task "new_image": the uploads are style references only — composition, mood and light, not
     the specific people or objects, unless an image is marked "ausgang" or "person".
 11. THE USER'S INSTRUCTION GOVERNS THE SCENE. The references supply identity, object fidelity

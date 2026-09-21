@@ -33,7 +33,10 @@ export const ROLLEN_REGEL: Record<RefRolle, string> = {
   ausgang:
     'SOURCE MATERIAL — what the result is built FROM, and the only place its content may come '
     + 'from. Reproduce it faithfully: shape, proportions, material, colour, every print, seam and '
-    + 'logo. It must be this exact item, not a similar one. IF A PERSON IS SHOWN, THAT PERSON IS '
+    + 'logo. It must be this exact item, not a similar one. IF IT CARRIES TEXT, a logo or a '
+    + 'layout — a page, a label, a poster — reproduce every word character for character in the '
+    + 'same typeface and position. Never re-typeset, translate, shorten or invent wording, not '
+    + 'even placeholder text. IF A PERSON IS SHOWN, THAT PERSON IS '
     + 'THE SUBJECT: reproduce the face exactly and never take it from another image. Identity is '
     + 'not file quality — take who the person is, never the file\'s compression artefacts, noise '
     + 'or blur, which must not show up as blotchy skin.',

@@ -11,19 +11,121 @@ import { willGesichtLock, identitaetsKlausel } from './identitaet'
 
 pdfjsLib.GlobalWorkerOptions.workerSrc = `https://unpkg.com/pdfjs-dist@${pdfjsLib.version}/build/pdf.worker.min.mjs`
 
-// ── Utilities ────────────────────────────────────────────────────────────────
-async function renderPdfFirstPageToFile(file: File): Promise<File> {
-  const arrayBuffer = await file.arrayBuffer()
-  const pdf = await pdfjsLib.getDocument({ data: arrayBuffer }).promise
-  const page = await pdf.getPage(1)
-  const viewport = page.getViewport({ scale: 2.0 })
+// ── PDF zu Bildern ───────────────────────────────────────────────────────────
+//
+// Ein PDF darf NICHT als PDF an das Bildmodell gehen, und es darf auch nicht
+// auf die erste Seite eingedampft werden — genau das geschah bisher. Bei einer
+// Broschüre sah das Modell also Seite 1 und erfand den Rest; bei einem
+// Mockup-Auftrag kam ein Mockup mit ausgedachtem Inhalt heraus.
+//
+// Jede Seite wird deshalb beim Hochladen einzeln in ein JPEG gerendert und
+// wird zu einer eigenen Referenzkarte. Damit sieht das Bildmodell dieselben
+// Pixel, die auch in der Druckdatei stehen, und die Nummerierung stimmt auf
+// beiden Seiten.
+
+/** Lange Kante der gerenderten Seite. Genug für Text und feine Logos. */
+const PDF_ZIELKANTE = 1800
+
+/** Ab diesem Seitenverhältnis kann eine Seite eine Doppelseite sein. */
+const DOPPELSEITE_AB = 1.25
+
+async function pdfSeitenZahl(file: File): Promise<number> {
+  const daten = await file.arrayBuffer()
+  const pdf = await pdfjsLib.getDocument({ data: daten }).promise
+  return pdf.numPages
+}
+
+/** Eine einzelne Seite rendern. `haelfte` schneidet die linke oder rechte Hälfte heraus. */
+async function rendereSeite(
+  file: File, seite: number, haelfte?: 'links' | 'rechts',
+): Promise<{ datei: File; breite: number; hoehe: number }> {
+  const daten = await file.arrayBuffer()
+  const pdf = await pdfjsLib.getDocument({ data: daten }).promise
+  const page = await pdf.getPage(seite)
+  const roh = page.getViewport({ scale: 1 })
+  // Auf eine feste lange Kante skalieren statt auf einen festen Faktor: Sonst
+  // wird eine A5-Seite winzig und ein Plakat riesig.
+  const skala = PDF_ZIELKANTE / Math.max(roh.width, roh.height)
+  const viewport = page.getViewport({ scale: Math.min(Math.max(skala, 1), 4) })
+
   const canvas = document.createElement('canvas')
-  canvas.width = viewport.width
-  canvas.height = viewport.height
-  await page.render({ canvasContext: canvas.getContext('2d')!, viewport, canvas }).promise
-  return new Promise((resolve) =>
-    canvas.toBlob((blob) => resolve(new File([blob!], file.name.replace(/\.pdf$/i, '.jpg'), { type: 'image/jpeg' })), 'image/jpeg', 0.9)
-  )
+  canvas.width = Math.round(viewport.width)
+  canvas.height = Math.round(viewport.height)
+  const ctx = canvas.getContext('2d')!
+  // Weisser Grund: Ein PDF ohne Hintergrund wird sonst schwarz.
+  ctx.fillStyle = '#ffffff'
+  ctx.fillRect(0, 0, canvas.width, canvas.height)
+  await page.render({ canvasContext: ctx, viewport, canvas }).promise
+
+  let ziel = canvas
+  if (haelfte) {
+    const halb = document.createElement('canvas')
+    halb.width = Math.round(canvas.width / 2)
+    halb.height = canvas.height
+    halb.getContext('2d')!.drawImage(
+      canvas, haelfte === 'links' ? 0 : halb.width, 0, halb.width, canvas.height,
+      0, 0, halb.width, canvas.height)
+    ziel = halb
+  }
+
+  const blob = await new Promise<Blob>((fertig) =>
+    ziel.toBlob((b) => fertig(b!), 'image/jpeg', 0.92))
+  const zusatz = haelfte ? `-${haelfte}` : ''
+  const name = `${file.name.replace(/\.pdf$/i, '')}-S${seite}${zusatz}.jpg`
+  return { datei: new File([blob], name, { type: 'image/jpeg' }), breite: ziel.width, hoehe: ziel.height }
+}
+
+interface PdfSeite {
+  datei: File
+  breite: number
+  hoehe: number
+  seite: number
+  /** Könnte eine Doppelseite sein — quer und etwa doppelt so breit wie hoch. */
+  vielleichtDoppelseite: boolean
+  /** Beschriftung für die Karte, z. B. „prospekt.pdf · Titelseite". */
+  beschriftung: string
+}
+
+/** Höchstzahl gerenderter Seiten. Darüber wird der Auftrag unbezahlbar. */
+const PDF_MAX_SEITEN = 12
+
+export async function pdfSeitenAlsBilder(
+  file: File, melde?: (text: string, fehler?: boolean) => void,
+): Promise<PdfSeite[]> {
+  const gesamt = await pdfSeitenZahl(file)
+  const anzahl = Math.min(gesamt, PDF_MAX_SEITEN)
+  if (gesamt > PDF_MAX_SEITEN) {
+    melde?.(`${file.name} hat ${gesamt} Seiten — die ersten ${PDF_MAX_SEITEN} wurden übernommen. `
+      + 'Weitere Seiten bei Bedarf einzeln hochladen.', true)
+  }
+  const seiten: PdfSeite[] = []
+  for (let n = 1; n <= anzahl; n++) {
+    const { datei, breite, hoehe } = await rendereSeite(file, n)
+    const verhaeltnis = breite / hoehe
+    seiten.push({
+      datei, breite, hoehe, seite: n,
+      vielleichtDoppelseite: verhaeltnis >= DOPPELSEITE_AB,
+      // Seite 1 ist bei einer Druckdatei fast immer die Titelseite — aber eben
+      // nur fast. Deshalb „vermutlich", nicht als Tatsache.
+      beschriftung: `${file.name} · ${n === 1 ? 'S.1 (vermutlich Titelseite)' : `S.${n}`}`,
+    })
+  }
+  return seiten
+}
+
+/** Eine Doppelseite in zwei Einzelseiten zerlegen. */
+export async function teileDoppelseite(
+  quelle: File, seite: number, dateiName: string,
+): Promise<Array<{ datei: File; breite: number; hoehe: number; beschriftung: string }>> {
+  const ergebnis = []
+  for (const haelfte of ['links', 'rechts'] as const) {
+    const { datei, breite, hoehe } = await rendereSeite(quelle, seite, haelfte)
+    ergebnis.push({
+      datei, breite, hoehe,
+      beschriftung: `${dateiName} · S.${seite} ${haelfte}`,
+    })
+  }
+  return ergebnis
 }
 
 // Bis hierher lief JEDES hochgeladene Bild durch JPEG 0.85 — auch ein 12-KB-
@@ -108,10 +210,12 @@ function formatBytes(b: number) {
 
 // ── Image Card ────────────────────────────────────────────────────────────────
 function ImageCard({
-  img, index, onRemove, onUpdate, disabled,
+  img, index, onRemove, onUpdate, onTeilen, disabled,
 }: {
   img: UploadedImage; index: number; onRemove: () => void
   onUpdate: (field: 'faceLock' | 'objectLock' | 'customLock' | 'rolle', value: boolean | string) => void
+  /** Nur bei PDF-Seiten, die eine Doppelseite sein könnten. */
+  onTeilen?: () => void
   disabled?: boolean
 }) {
   return (
@@ -149,6 +253,23 @@ function ImageCard({
                 : 'Knapp — für scharfe Details lieber eine größere Fassung.'}
             </p>
           )}
+          {/* Eine Doppelseite aus einer Druckdatei lässt sich nicht sicher von
+              einer echten Querformat-Seite unterscheiden — A4 quer und zwei
+              A4 hoch nebeneinander haben dasselbe Seitenverhältnis. Deshalb
+              wird hier nur gefragt, nicht automatisch geteilt. */}
+          {img.vielleichtDoppelseite && onTeilen && (
+            <div className="mt-2 flex items-center gap-2 flex-wrap">
+              <span className="text-[10px] font-sans text-heron-700">
+                Sieht nach einer Doppelseite aus.
+              </span>
+              <button type="button" onClick={onTeilen} disabled={disabled}
+                title="In linke und rechte Einzelseite zerlegen"
+                className="px-2 py-1 text-[10px] font-sans font-medium border border-heron-500 text-heron-600 hover:bg-heron-500 hover:text-white transition-colors">
+                In zwei Seiten teilen
+              </button>
+            </div>
+          )}
+
           {/* Rolle: Ausgangsmaterial wird originalgetreu übernommen, die
               Zielreferenz gibt nur Anmutung vor. Ohne diese Trennung nimmt das
               Bildmodell Inhalte (und Gesichter) aus dem falschen Bild. */}
@@ -304,7 +425,7 @@ function Spracheingabe({ onText, disabled }: { onText: (text: string) => void; d
 // Person aus dem falschen Bild.
 function UploadZone({
   images, rolle, nummerVon, titel, hinweis, breit, aktiv, onAktiv,
-  onAdd, onRemove, onClear, onUpdateImage, disabled,
+  onAdd, onRemove, onClear, onUpdateImage, onTeilen, disabled,
 }: {
   images: UploadedImage[]
   rolle: RefRolle
@@ -324,6 +445,7 @@ function UploadZone({
   onAdd: (files: FileList | File[], rolle: RefRolle) => void
   onRemove: (id: string) => void; onClear: () => void
   onUpdateImage: (id: string, field: 'faceLock' | 'objectLock' | 'customLock' | 'rolle', value: boolean | string) => void
+  onTeilen: (id: string) => void
   disabled?: boolean
 }) {
   const inputRef = useRef<HTMLInputElement>(null)
@@ -394,6 +516,7 @@ function UploadZone({
             <ImageCard key={img.id} img={img} index={nummerVon(img) - 1}
               onRemove={() => onRemove(img.id)}
               onUpdate={(field, value) => onUpdateImage(img.id, field, value)}
+              onTeilen={() => onTeilen(img.id)}
               disabled={disabled} />
           ))}
         </div>
@@ -508,6 +631,15 @@ function JobPanel({
     })
   }
 
+  // Kurze Rückmeldung am Kopf des Panels (Einfügen, PDF-Fehler). Steht hier
+  // oben, weil sie schon beim Hochladen gebraucht wird.
+  const wurzelRef = useRef<HTMLDivElement>(null)
+  const [eingefuegt, setEingefuegt] = useState<{ text: string; fehler?: boolean } | null>(null)
+  const melde = useCallback((text: string, fehler = false) => {
+    setEingefuegt({ text, fehler })
+    window.setTimeout(() => setEingefuegt(null), 3000)
+  }, [])
+
   const addImages = useCallback((files: FileList | File[], rolle: RefRolle = 'ausgang') => {
     const IMAGE_EXTS = new Set(['jpg', 'jpeg', 'png', 'webp', 'gif', 'pdf'])
     const accepted = Array.from(files).filter((f) => {
@@ -515,17 +647,41 @@ function JobPanel({
       const ext = f.name.split('.').pop()?.toLowerCase() ?? ''
       return IMAGE_EXTS.has(ext)
     })
-    const neue = accepted.map((f) => ({ ...createUploadedImage(f), rolle }))
-    setImages((prev) => [...prev, ...neue])
+    const pdfs = accepted.filter((f) => f.type === 'application/pdf')
+    const bilder = accepted.filter((f) => f.type !== 'application/pdf')
+
+    const neue = bilder.map((f) => ({ ...createUploadedImage(f), rolle }))
+    if (neue.length > 0) setImages((prev) => [...prev, ...neue])
     // Maße nachtragen, sobald sie bekannt sind — für den Auflösungshinweis.
     for (const eintrag of neue) {
-      if (eintrag.file.type === 'application/pdf') continue
       const messbild = new Image()
       messbild.onload = () => setImages((prev) => prev.map((i) =>
         i.id === eintrag.id ? { ...i, breite: messbild.width, hoehe: messbild.height } : i))
       messbild.src = eintrag.preview
     }
-  }, [])
+
+    // Jede PDF-Seite wird eine eigene Karte. Vorher ging das PDF als PDF an den
+    // Prompt-Schreiber und bei der Generierung nur seine ERSTE Seite ans
+    // Bildmodell — der Rest wurde erfunden.
+    for (const pdf of pdfs) {
+      setPdfLaeuft((v) => v + 1)
+      void pdfSeitenAlsBilder(pdf, melde)
+        .then((seiten) => {
+          setImages((prev) => [...prev, ...seiten.map((s) => ({
+            ...createUploadedImage(s.datei),
+            rolle,
+            name: s.beschriftung,
+            breite: s.breite,
+            hoehe: s.hoehe,
+            pdfQuelle: pdf,
+            pdfSeite: s.seite,
+            vielleichtDoppelseite: s.vielleichtDoppelseite,
+          }))])
+        })
+        .catch((e) => melde(`PDF konnte nicht gelesen werden: ${e instanceof Error ? e.message : 'Fehler'}`, true))
+        .finally(() => setPdfLaeuft((v) => v - 1))
+    }
+  }, [melde])
 
   const removeImage = useCallback((id: string) => {
     setImages((prev) => { const img = prev.find((i) => i.id === id); if (img) URL.revokeObjectURL(img.preview); return prev.filter((i) => i.id !== id) })
@@ -537,6 +693,40 @@ function JobPanel({
       return prev.filter((i) => i.rolle !== rolle)
     })
   }, [])
+
+  /** Wie viele PDFs werden gerade gerendert? */
+  const [pdfLaeuft, setPdfLaeuft] = useState(0)
+
+  /** Eine Doppelseite in zwei Einzelseiten zerlegen. */
+  const doppelseiteTeilen = useCallback(async (id: string) => {
+    const karte = images.find((i) => i.id === id)
+    if (!karte?.pdfQuelle || !karte.pdfSeite) return
+    setPdfLaeuft((v) => v + 1)
+    try {
+      const haelften = await teileDoppelseite(karte.pdfQuelle, karte.pdfSeite, karte.pdfQuelle.name)
+      setImages((prev) => {
+        const i = prev.findIndex((x) => x.id === id)
+        if (i === -1) return prev
+        URL.revokeObjectURL(prev[i].preview)
+        const neue = haelften.map((h) => ({
+          ...createUploadedImage(h.datei),
+          rolle: karte.rolle,
+          name: h.beschriftung,
+          breite: h.breite,
+          hoehe: h.hoehe,
+          pdfQuelle: karte.pdfQuelle,
+          pdfSeite: karte.pdfSeite,
+          vielleichtDoppelseite: false,
+        }))
+        // An dieselbe Stelle setzen, damit die Reihenfolge der Seiten bleibt.
+        return [...prev.slice(0, i), ...neue, ...prev.slice(i + 1)]
+      })
+    } catch (e) {
+      melde(`Doppelseite konnte nicht geteilt werden: ${e instanceof Error ? e.message : 'Fehler'}`, true)
+    } finally {
+      setPdfLaeuft((v) => v - 1)
+    }
+  }, [images, melde])
 
   /** Welche Fläche bekommt das nächste Cmd+V? */
   const [einfuegeZiel, setEinfuegeZiel] = useState<RefRolle>('ausgang')
@@ -567,15 +757,6 @@ function JobPanel({
   // dass vorher irgendwo geklickt wurde — es gibt also kein Element mit Fokus.
   // Bei mehreren Reitern reagiert nur der sichtbare: offsetParent ist bei
   // ausgeblendeten Panels null.
-  const wurzelRef = useRef<HTMLDivElement>(null)
-  const [eingefuegt, setEingefuegt] = useState<{ text: string; fehler?: boolean } | null>(null)
-  const zielRef = useRef<RefRolle>('ausgang')
-  zielRef.current = einfuegeZiel
-
-  const melde = useCallback((text: string, fehler = false) => {
-    setEingefuegt({ text, fehler })
-    window.setTimeout(() => setEingefuegt(null), 3000)
-  }, [])
 
   /**
    * Adresse eines Bildes einfügen. Der Browser darf ein fremdes Bild wegen CORS
@@ -600,6 +781,9 @@ function JobPanel({
       melde(e instanceof Error ? e.message : 'Bild konnte nicht geholt werden', true)
     }
   }, [addImages, melde])
+
+  const zielRef = useRef<RefRolle>('ausgang')
+  zielRef.current = einfuegeZiel
 
   useEffect(() => {
     const beiEinfuegen = (e: ClipboardEvent) => {
@@ -650,8 +834,10 @@ function JobPanel({
     if (images.length === 0 && promptMode !== 'generation') return
     setAnalysisStatus('analyzing'); setAnalysisError(null); setPrompt(''); setDenkSchritt('')
     try {
-      const compressed = await Promise.all(geordneteBilder.map((img) =>
-        img.file.type === 'application/pdf' ? Promise.resolve(img.file) : compressImage(img.file)))
+      // PDFs gibt es hier nicht mehr — sie wurden beim Hochladen in einzelne
+      // Seitenbilder zerlegt. Prompt-Schreiber und Bildmodell sehen dadurch
+      // exakt dasselbe.
+      const compressed = await Promise.all(geordneteBilder.map((img) => compressImage(img.file)))
       const formData = new FormData()
       compressed.forEach((f) => formData.append('images', f))
       // Der Gesicht-Lock setzt sich selbst, wenn der Auftragstext ihn sinngemäß
@@ -723,7 +909,7 @@ function JobPanel({
     try {
       const bilder = begrenze(geordneteBilder)
       const referenceImages = await Promise.all(
-        bilder.map((img) => (img.file.type === 'application/pdf' ? renderPdfFirstPageToFile(img.file) : compressImage(img.file)).then(
+        bilder.map((img) => compressImage(img.file).then(
           (compressed) => new Promise<{ mimeType: string; data: string }>((resolve) => {
             const reader = new FileReader()
             reader.onload = () => {
@@ -822,6 +1008,12 @@ function JobPanel({
   return (
     <div className="flex flex-col gap-5" ref={wurzelRef}>
 
+      {pdfLaeuft > 0 && (
+        <div className="px-3 py-2 text-xs font-sans border border-heron-200 bg-heron-50 text-heron-700 animate-fade-in">
+          PDF wird in einzelne Seiten zerlegt…
+        </div>
+      )}
+
       {eingefuegt && (
         <div className={`px-3 py-2 text-xs font-sans animate-fade-in border
           ${eingefuegt.fehler ? 'border-red-200 bg-red-50 text-red-700' : 'border-heron-200 bg-heron-50 text-heron-700'}`}>
@@ -847,7 +1039,8 @@ function JobPanel({
             hinweis="Woraus etwas entsteht — wird originalgetreu übernommen, samt Gesicht. JPEG, PNG, WebP, PDF."
             aktiv={einfuegeZiel === 'ausgang'} onAktiv={() => setEinfuegeZiel('ausgang')}
             onAdd={addImages} onRemove={removeImage} onClear={() => clearRolle('ausgang')}
-            onUpdateImage={updateImageSetting} disabled={analysisStatus === 'analyzing'} />
+            onUpdateImage={updateImageSetting} onTeilen={doppelseiteTeilen}
+            disabled={analysisStatus === 'analyzing'} />
         </div>
         <div className="flex flex-col gap-3">
           <UploadZone
@@ -856,7 +1049,8 @@ function JobPanel({
             hinweis="Wie das Ergebnis aussehen soll: Farbe, Licht, Perspektive, Ausschnitt — nicht die Objekte oder Personen daraus."
             aktiv={einfuegeZiel === 'ziel'} onAktiv={() => setEinfuegeZiel('ziel')}
             onAdd={addImages} onRemove={removeImage} onClear={() => clearRolle('ziel')}
-            onUpdateImage={updateImageSetting} disabled={analysisStatus === 'analyzing'} />
+            onUpdateImage={updateImageSetting} onTeilen={doppelseiteTeilen}
+            disabled={analysisStatus === 'analyzing'} />
         </div>
       </div>
 

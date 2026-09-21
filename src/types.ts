@@ -16,6 +16,15 @@ export interface UploadedImage {
   /** Pixelmaße, sobald bekannt — für den Auflösungshinweis vor der Generierung. */
   breite?: number
   hoehe?: number
+  /**
+   * Stammt dieses Bild aus einer PDF-Seite? Dann bleibt die Quelldatei hier
+   * liegen, damit sich eine Doppelseite nachträglich noch teilen lässt, ohne
+   * dass man das PDF erneut hochladen muss.
+   */
+  pdfQuelle?: File
+  pdfSeite?: number
+  /** Quer und etwa doppelt so breit wie hoch — könnte eine Doppelseite sein. */
+  vielleichtDoppelseite?: boolean
   // Per-image lock settings
   faceLock: boolean
   objectLock: boolean
