@@ -4,6 +4,7 @@ import multer from 'multer'
 import type { Request, Response } from 'express'
 import { mountAuthRoutes, requireAuth } from '../server/auth.js'
 import { holeBild } from '../server/bildholen.js'
+import { pruefeErgebnis } from '../server/pruefung.js'
 import { analyzeImages } from '../server/analyze.js'
 
 const app = express()
@@ -252,6 +253,9 @@ async function callGemini(
 // Bild von einer Adresse holen — für das Einfügen aus dem Browser, wenn in der
 // Zwischenablage nur ein Verweis statt eines Bildes liegt.
 app.post('/api/bild-holen', requireAuth, holeBild)
+// Das erzeugte Bild gegen Referenzen und Auftrag halten — die Grundlage
+// fürs Nachschärfen.
+app.post('/api/pruefen', requireAuth, pruefeErgebnis)
 
 app.post('/api/generate', requireAuth, async (req: Request, res: Response) => {
   try {

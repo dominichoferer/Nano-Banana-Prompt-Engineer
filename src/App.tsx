@@ -8,6 +8,8 @@ import { CHANGE_AREAS, MOCKUP_TYPES, GEN_MODELS, GEN_FAMILIEN, OPENAI_FORMATS, r
 import type { RefRolle, RefBild } from './referenzen'
 import { baueLegende, begrenze, setzeManifest } from './referenzen'
 import { willGesichtLock, identitaetsKlausel } from './identitaet'
+import type { Pruefergebnis, Abweichung } from './nachschaerfen'
+import { korrekturBlock, mitKorrektur, befund } from './nachschaerfen'
 
 pdfjsLib.GlobalWorkerOptions.workerSrc = `https://unpkg.com/pdfjs-dist@${pdfjsLib.version}/build/pdf.worker.min.mjs`
 
@@ -126,6 +128,12 @@ export async function teileDoppelseite(
     })
   }
   return ergebnis
+}
+
+/** Trennt „data:image/png;base64,…" in Typ und Daten. */
+function ausDatenUrl(url: string): { mimeType: string; data: string } | null {
+  const m = /^data:([^;,]+);base64,(.+)$/s.exec(url.trim())
+  return m ? { mimeType: m[1], data: m[2] } : null
 }
 
 // Bis hierher lief JEDES hochgeladene Bild durch JPEG 0.85 — auch ein 12-KB-
@@ -586,6 +594,25 @@ function JobPanel({
   const [genResults, setGenResults] = useState<Array<{ label: string; image: string }>>([])
   const [genProgress, setGenProgress] = useState<{ done: number; total: number } | null>(null)
 
+  // ── Nachschärfen ────────────────────────────────────────────────────────
+  //
+  // Ein Bildmodell sagt nie, dass es etwas nicht geschafft hat — es liefert
+  // immer ein Bild. Deshalb wird jedes Ergebnis geprüft, und was nicht passt,
+  // lässt sich in einem zweiten Anlauf gezielt nachbessern: derselbe Prompt,
+  // dieselben Referenzen, plus ein Korrekturblock am Ende.
+  const [pruefung, setPruefung] = useState<Pruefergebnis | null>(null)
+  const [pruefLaeuft, setPruefLaeuft] = useState(false)
+  const [nachschaerfText, setNachschaerfText] = useState('')
+  /** Welche der gefundenen Abweichungen sollen in die Korrektur? */
+  const [uebernommen, setUebernommen] = useState<Set<number>>(new Set())
+  const [versuch, setVersuch] = useState(1)
+  const [vorbildMitschicken, setVorbildMitschicken] = useState(true)
+  /** Der zuletzt abgeschickte Volltext — Grundlage jeder Nachbesserung. */
+  const letzterVolltext = useRef('')
+  // Über eine Referenz, damit sich handleGenerate und pruefeBild nicht
+  // gegenseitig in den Abhängigkeitslisten festhalten.
+  const pruefeBildRef = useRef<((bild: string) => Promise<void>) | null>(null)
+
   // Nur was JEDES gewählte Modell kann, darf angeboten werden. Ein Format, das
   // eines davon nicht kennt, liesse den Auftrag sonst mittendrin scheitern.
   const availableRatios = useMemo(
@@ -898,9 +925,19 @@ function JobPanel({
     }
   }, [geordneteBilder, userDescription, promptMode, changeAreas, mockupType, mockupEnvironment])
 
-  const handleGenerate = useCallback(async () => {
+  /**
+   * Generieren — und mit `korrektur` zugleich das Nachschärfen.
+   *
+   * Beides läuft absichtlich durch DIESELBE Funktion: Die Referenzbilder
+   * werden dabei frisch aus den Karten gezogen, also sind neu nachgeschickte
+   * Bilder automatisch dabei, und Legende, Manifest und Identitätsklausel
+   * entstehen genauso wie beim ersten Mal. Ein eigener Pfad fürs Nachschärfen
+   * wäre binnen weniger Wochen von diesem hier abgewichen.
+   */
+  const handleGenerate = useCallback(async (korrektur?: { block: string; vorbild?: string }) => {
     if (!prompt.trim()) return
     setGenerationStatus('generating'); setGenerationError(null); setGeneratedImage(null)
+    setPruefung(null)
     // Jede Variante läuft auf jedem gewählten Modell. Nach Variante gruppiert,
     // damit früh je ein Ergebnis pro Modell dasteht.
     const laeufe = Array.from({ length: variantCount }, (_, i) => i + 1)
@@ -937,7 +974,18 @@ function JobPanel({
       // widersprechen. Ist der Prompt kein JSON (etwa von Hand überschrieben),
       // bleibt er unverändert.
       const mitManifest = setzeManifest(prompt, rollenListe)
-      const volltext = [legende, mitManifest, klausel].filter(Boolean).join('\n\n')
+      const grundtext = [legende, mitManifest, klausel].filter(Boolean).join('\n\n')
+      // Die Korrektur kommt ANS ENDE des unveränderten Prompts, nicht an seine
+      // Stelle. Ein neu geschriebener Prompt verliert regelmässig Dinge, die
+      // vorher stimmten.
+      const volltext = korrektur ? mitKorrektur(grundtext, korrektur.block) : grundtext
+      letzterVolltext.current = volltext
+
+      // Der misslungene Versuch geht als LETZTES Bild mit — der Korrekturblock
+      // sagt ausdrücklich, dass es die abgelehnte Fassung ist und nichts davon
+      // übernommen werden darf.
+      const vorbild = korrektur?.vorbild ? ausDatenUrl(korrektur.vorbild) : null
+      const anBildmodell = vorbild ? [...referenceImages, vorbild] : referenceImages
 
       // Nacheinander statt parallel: So steht das erste Bild sofort da, jeder
       // einzelne Aufruf bleibt im Zeitlimit der Vercel-Function, und wir laufen
@@ -958,7 +1006,7 @@ function JobPanel({
               prompt: volltext, model: lauf.model, resolution: selectedResolution, aspectRatio: selectedAspectRatio,
               outputFormat: istGpt(lauf.model) ? selectedOutputFormat : undefined,
               transparent: kannTransparenz(lauf.model) && transparent ? true : undefined,
-              referenceImages: referenceImages.length > 0 ? referenceImages : undefined,
+              referenceImages: anBildmodell.length > 0 ? anBildmodell : undefined,
             }),
           })
           if (!res.ok) {
@@ -981,6 +1029,10 @@ function JobPanel({
       // Rest wird benannt.
       setGenerationError(fehler.length > 0 ? `${fehler.length} von ${laeufe.length} fehlgeschlagen — ${fehler.join(' · ')}` : null)
       setGenerationStatus('done')
+      // Sofort prüfen — das ist der Punkt, an dem man erfährt, ob es getaugt
+      // hat, statt es selbst suchen zu müssen. Läuft über Gemini und kostet
+      // nichts.
+      void pruefeBildRef.current?.(fertig[0].image)
     } catch (err) {
       setGenerationError(err instanceof Error ? err.message : 'Generierung fehlgeschlagen')
       setGenerationStatus('error')
@@ -988,7 +1040,7 @@ function JobPanel({
       setGenProgress(null)
     }
   }, [prompt, aktiveModelle, selectedResolution, selectedAspectRatio, selectedOutputFormat,
-      transparent, variantCount, geordneteBilder])
+      transparent, variantCount, geordneteBilder, nummernMit])
 
   // Dem Elternteil einen Lesezugriff auf den aktuellen Stand geben. Nur so
   // lässt sich ein Auftrag duplizieren, ohne den gesamten Zustand nach oben zu
@@ -1001,6 +1053,63 @@ function JobPanel({
     transparent, variantCount,
   })
   useEffect(() => { onAbzug?.(() => standRef.current()) }, [onAbzug])
+
+  /** Das aktive Ergebnis gegen Referenzen und Auftrag halten. */
+  const pruefeBild = useCallback(async (bild: string) => {
+    setPruefLaeuft(true)
+    setPruefung(null)
+    try {
+      const bilder = begrenze(geordneteBilder)
+      const referenzen = await Promise.all(bilder.map((img, i) =>
+        compressImage(img.file).then((klein) => new Promise<{ mimeType: string; data: string; rolle: string; nummer: number }>((fertig) => {
+          const leser = new FileReader()
+          leser.onload = () => {
+            const [kopf, daten] = (leser.result as string).split(',')
+            fertig({
+              mimeType: kopf.match(/data:([^;]+)/)?.[1] ?? 'image/jpeg',
+              data: daten, rolle: img.rolle, nummer: i + 1,
+            })
+          }
+          leser.readAsDataURL(klein)
+        }))))
+      const res = await fetch('/api/pruefen', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        credentials: 'same-origin',
+        body: JSON.stringify({ bild, referenzen, auftrag: userDescription, prompt: letzterVolltext.current }),
+      })
+      const daten = await res.json()
+      if (!res.ok) throw new Error(daten.error || 'Prüfung fehlgeschlagen')
+      setPruefung(daten as Pruefergebnis)
+      // Schwere Abweichungen sind vorausgewählt — die will man fast immer
+      // beheben. Leichte wählt man bewusst dazu.
+      setUebernommen(new Set((daten.abweichungen ?? [])
+        .map((a: Abweichung, i: number) => (a.schwere === 'schwer' ? i : -1))
+        .filter((i: number) => i >= 0)))
+    } catch (e) {
+      // Eine fehlgeschlagene Prüfung darf das Ergebnis nicht entwerten.
+      setPruefung({
+        bewertung: 'gut',
+        zusammenfassung: `Prüfung nicht möglich: ${e instanceof Error ? e.message : 'Fehler'}`,
+        abweichungen: [],
+      })
+    } finally {
+      setPruefLaeuft(false)
+    }
+  }, [geordneteBilder, userDescription])
+  pruefeBildRef.current = pruefeBild
+
+  /** Nachschärfen: derselbe Prompt, dieselben Referenzen, plus Korrektur. */
+  const handleNachschaerfen = useCallback(() => {
+    const genommen = (pruefung?.abweichungen ?? []).filter((_, i) => uebernommen.has(i))
+    if (!nachschaerfText.trim() && genommen.length === 0) return
+    const naechster = versuch + 1
+    setVersuch(naechster)
+    void handleGenerate({
+      block: korrekturBlock(naechster, nachschaerfText, genommen, vorbildMitschicken && !!generatedImage),
+      vorbild: vorbildMitschicken ? generatedImage ?? undefined : undefined,
+    })
+  }, [pruefung, uebernommen, nachschaerfText, versuch, vorbildMitschicken, generatedImage, handleGenerate])
 
   const canAnalyze = (images.length > 0 || promptMode === 'generation') && analysisStatus !== 'analyzing'
   const canGenerate = prompt.trim().length > 0 && generationStatus !== 'generating'
@@ -1231,6 +1340,95 @@ function JobPanel({
               setGenResults([])
             }} />
 
+          {/* ── Prüfung und Nachschärfen ──────────────────────────────────
+              Ein Bildmodell meldet nie, dass es etwas nicht geschafft hat. Hier
+              steht, was abweicht — und von hier aus geht der zweite Anlauf. */}
+          {generatedImage && generationStatus === 'done' && (
+            <div className="flex flex-col gap-3 border-t-2 border-cream-200 pt-4 animate-fade-in">
+              <div className="flex items-center justify-between gap-2 flex-wrap">
+                <span className="label-section">
+                  Prüfung{versuch > 1 ? ` · Versuch ${versuch}` : ''}
+                </span>
+                {pruefLaeuft && (
+                  <span className="text-[11px] font-sans text-ink-400">wird geprüft…</span>
+                )}
+                {!pruefLaeuft && pruefung && (
+                  <span className={`px-2 py-1 text-[10px] font-sans font-medium uppercase tracking-wide
+                    ${pruefung.bewertung === 'gut' ? 'bg-heron-50 text-heron-700 border border-heron-200'
+                      : pruefung.bewertung === 'maengel' ? 'bg-cream-100 text-ink-700 border border-cream-300'
+                      : 'bg-red-50 text-red-700 border border-red-200'}`}>
+                    {befund(pruefung)}
+                  </span>
+                )}
+              </div>
+
+              {pruefung && (
+                <p className="text-xs font-sans text-ink-600 leading-relaxed">{pruefung.zusammenfassung}</p>
+              )}
+
+              {/* Jede Abweichung einzeln übernehmbar: Manches ist Absicht, und
+                  was nicht in die Korrektur soll, darf nicht hinein. */}
+              {pruefung && pruefung.abweichungen.length > 0 && (
+                <ul className="flex flex-col gap-1.5">
+                  {pruefung.abweichungen.map((a, i) => (
+                    <li key={i}>
+                      <label className="flex items-start gap-2 cursor-pointer">
+                        <input type="checkbox" checked={uebernommen.has(i)}
+                          onChange={(e) => setUebernommen((prev) => {
+                            const neu = new Set(prev)
+                            if (e.target.checked) neu.add(i); else neu.delete(i)
+                            return neu
+                          })}
+                          className="mt-0.5 accent-heron-500" />
+                        <span className="flex flex-col">
+                          <span className="text-xs font-sans text-ink-800">
+                            <span className={a.schwere === 'schwer' ? 'text-red-600 font-medium' : 'text-ink-500'}>
+                              {a.schwere === 'schwer' ? 'Schwer' : 'Leicht'}
+                            </span>
+                            {' · '}{a.was}
+                          </span>
+                          <span className="text-[11px] font-sans text-ink-400 leading-snug">
+                            Soll: {a.erwartet} — Ist: {a.gesehen}
+                          </span>
+                        </span>
+                      </label>
+                    </li>
+                  ))}
+                </ul>
+              )}
+
+              <div className="flex flex-col gap-1.5">
+                <span className="label-section">Was soll anders werden?</span>
+                <textarea value={nachschaerfText} onChange={(e) => setNachschaerfText(e.target.value)}
+                  placeholder="z.B. Der Schriftzug auf der Titelseite muss exakt der aus Bild 1 sein. Hintergrund heller."
+                  rows={2} className="input-field resize-none text-sm leading-relaxed" />
+                <div className="flex items-center justify-between gap-2 flex-wrap">
+                  <label className="flex items-center gap-2 cursor-pointer">
+                    <input type="checkbox" checked={vorbildMitschicken}
+                      onChange={(e) => setVorbildMitschicken(e.target.checked)}
+                      className="accent-heron-500" />
+                    <span className="text-[11px] font-sans text-ink-500">
+                      Abgelehnten Versuch mitschicken (als Gegenbeispiel, nicht als Vorlage)
+                    </span>
+                  </label>
+                  <span className="text-[10px] font-sans text-ink-400">
+                    Referenzbilder gehen automatisch wieder mit — weitere einfach oben ablegen.
+                  </span>
+                </div>
+              </div>
+
+              <button onClick={handleNachschaerfen}
+                disabled={!nachschaerfText.trim() && uebernommen.size === 0}
+                className="btn-secondary w-full py-3">
+                <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2}
+                    d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" />
+                </svg>
+                Korrigiert neu generieren
+              </button>
+            </div>
+          )}
+
           {/* Fortschritt über die Serie. Ohne ihn sieht es bei drei Varianten
               aus, als hinge das Werkzeug. */}
           {genProgress && genProgress.total > 1 && (
@@ -1254,8 +1452,9 @@ function JobPanel({
               <div className="grid grid-cols-2 sm:grid-cols-3 gap-2">
                 {genResults.map((r, i) => (
                   <div key={`${r.label}-${i}`} className="group relative overflow-hidden border border-cream-200 bg-cream-100">
-                    <button onClick={() => setGeneratedImage(r.image)} className="block w-full"
-                      title={`${r.label} als aktives Bild setzen`}>
+                    <button onClick={() => { setGeneratedImage(r.image); void pruefeBild(r.image) }}
+                      className="block w-full"
+                      title={`${r.label} als aktives Bild setzen und prüfen`}>
                       <img src={r.image} alt={r.label} className="w-full aspect-square object-cover" />
                     </button>
                     <div className="absolute inset-x-0 bottom-0 flex items-center justify-between gap-1 bg-ink-900/70 px-2 py-1.5">
@@ -1418,7 +1617,7 @@ function JobPanel({
               </div>
             </div>
           )}
-          <button onClick={handleGenerate} disabled={!canGenerate} className="btn-primary w-full py-4 text-base">
+          <button onClick={() => void handleGenerate()} disabled={!canGenerate} className="btn-primary w-full py-4 text-base">
             {generationStatus === 'generating' ? (
               <>
                 <svg className="w-5 h-5 animate-spin" fill="none" viewBox="0 0 24 24">

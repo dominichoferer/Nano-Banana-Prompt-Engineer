@@ -7,6 +7,7 @@ import { fileURLToPath } from 'url'
 import { analyzeImages } from './analyze.js'
 import { generateImage } from './generate.js'
 import { holeBild } from './bildholen.js'
+import { pruefeErgebnis } from './pruefung.js'
 import { mountAuthRoutes, requireAuth, isAuthEnabled } from './auth.js'
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url))
@@ -42,6 +43,9 @@ app.post('/api/generate', requireAuth, generateImage)
 // Bild von einer Adresse holen — für das Einfügen aus dem Browser, wenn in der
 // Zwischenablage nur ein Verweis statt eines Bildes liegt.
 app.post('/api/bild-holen', requireAuth, holeBild)
+// Das erzeugte Bild gegen Referenzen und Auftrag halten — die Grundlage
+// fürs Nachschärfen.
+app.post('/api/pruefen', requireAuth, pruefeErgebnis)
 
 // Serve React build in production
 const clientBuildPath = path.join(__dirname, '../client')
