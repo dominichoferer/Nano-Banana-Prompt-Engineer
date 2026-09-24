@@ -130,6 +130,23 @@ export async function teileDoppelseite(
   return ergebnis
 }
 
+/**
+ * Fehlertext aus einer Antwort holen.
+ *
+ * Bei 413 antwortet nicht die App, sondern Vercel — mit HTML statt JSON. Ohne
+ * Sonderfall stand dann nur „Server error: 413" da, und niemand wusste, was zu
+ * tun ist.
+ */
+async function fehlerText(res: Response, standard: string): Promise<string> {
+  if (res.status === 413) {
+    return 'Die Anfrage war zu gross für den Server (Grenze 4,5 MB). '
+      + 'Weniger oder kleinere Referenzbilder verwenden — PDF-Seiten, die nicht gebraucht '
+      + 'werden, lassen sich einzeln entfernen.'
+  }
+  const daten = await res.json().catch(() => null)
+  return (daten && typeof daten.error === 'string' ? daten.error : null) ?? `${standard}: ${res.status}`
+}
+
 /** Trennt „data:image/png;base64,…" in Typ und Daten. */
 function ausDatenUrl(url: string): { mimeType: string; data: string } | null {
   const m = /^data:([^;,]+);base64,(.+)$/s.exec(url.trim())
@@ -144,18 +161,17 @@ function ausDatenUrl(url: string): { mimeType: string; data: string } | null {
 const KOMPRESS_MAXKANTE = 1600
 const KOMPRESS_SCHONFRIST_BYTES = 900 * 1024
 
-function compressImage(file: File): Promise<File> {
+function compressImage(file: File, maxKante = KOMPRESS_MAXKANTE, qualitaet = 0.85): Promise<File> {
   return new Promise((resolve) => {
     const img = new Image()
     const url = URL.createObjectURL(file)
     img.onload = () => {
       URL.revokeObjectURL(url)
-      const MAX = KOMPRESS_MAXKANTE
-      if (Math.max(img.width, img.height) <= MAX && file.size <= KOMPRESS_SCHONFRIST_BYTES) {
+      if (Math.max(img.width, img.height) <= maxKante && file.size <= KOMPRESS_SCHONFRIST_BYTES) {
         resolve(file)
         return
       }
-      const scale = Math.min(1, MAX / Math.max(img.width, img.height))
+      const scale = Math.min(1, maxKante / Math.max(img.width, img.height))
       const w = Math.round(img.width * scale)
       const h = Math.round(img.height * scale)
       const canvas = document.createElement('canvas')
@@ -163,12 +179,81 @@ function compressImage(file: File): Promise<File> {
       canvas.getContext('2d')!.drawImage(img, 0, 0, w, h)
       canvas.toBlob(
         (blob) => resolve(new File([blob!], file.name, { type: 'image/jpeg' })),
-        'image/jpeg', 0.85,
+        'image/jpeg', qualitaet,
       )
     }
     img.onerror = () => resolve(file)
     img.src = url
   })
+}
+
+// ── Anfragegrösse ────────────────────────────────────────────────────────────
+//
+// Vercel nimmt höchstens 4,5 MB je Anfrage an. Wird es mehr, antwortet nicht
+// die App, sondern die Plattform — mit einem nackten 413, an dem man nicht
+// sieht, woran es lag.
+//
+// Voll wird es schneller als man denkt: Base64 bläht jedes Bild um ein Drittel
+// auf, eine PDF-Seite wiegt schnell 400 KB, und beim Nachschärfen kommt der
+// abgelehnte Versuch dazu — der kann als 4K-PNG allein mehrere MB haben.
+//
+// Deshalb wird hier gemessen und notfalls verkleinert, bis es passt. Lieber
+// etwas weniger Auflösung als eine Anfrage, die gar nicht ankommt.
+const ANFRAGE_BUDGET_BYTES = 3_400_000
+
+interface Bildteil { mimeType: string; data: string }
+
+function teilGroesse(t: Bildteil): number {
+  return t.data.length
+}
+
+/** Datei zu einem Base64-Teil, auf die gewünschte Kante gebracht. */
+async function alsTeil(file: File, maxKante: number, qualitaet: number): Promise<Bildteil> {
+  const klein = await compressImage(file, maxKante, qualitaet)
+  return new Promise((fertig) => {
+    const leser = new FileReader()
+    leser.onload = () => {
+      const [kopf, daten] = (leser.result as string).split(',')
+      fertig({ mimeType: kopf.match(/data:([^;]+)/)?.[1] ?? 'image/jpeg', data: daten })
+    }
+    leser.readAsDataURL(klein)
+  })
+}
+
+/** Ein fertiges Bild (Daten-URL) verkleinern — etwa der abgelehnte Versuch. */
+function verkleinereDatenUrl(url: string, maxKante: number, qualitaet = 0.8): Promise<Bildteil | null> {
+  return new Promise((fertig) => {
+    const img = new Image()
+    img.onload = () => {
+      const skala = Math.min(1, maxKante / Math.max(img.width, img.height))
+      const c = document.createElement('canvas')
+      c.width = Math.round(img.width * skala)
+      c.height = Math.round(img.height * skala)
+      c.getContext('2d')!.drawImage(img, 0, 0, c.width, c.height)
+      const daten = c.toDataURL('image/jpeg', qualitaet).split(',')[1]
+      fertig({ mimeType: 'image/jpeg', data: daten })
+    }
+    img.onerror = () => fertig(ausDatenUrl(url))
+    img.src = url
+  })
+}
+
+/**
+ * Bilder so weit verkleinern, dass die Anfrage durchgeht.
+ *
+ * Es wird ALLEN gemeinsam die Kante gekürzt statt einzelne Bilder wegzulassen:
+ * Ein fehlendes Referenzbild verschiebt die Nummerierung und macht den halben
+ * Prompt falsch. Eine kleinere Kante kostet Schärfe, aber nichts Inhaltliches.
+ */
+async function packeBilder(
+  dateien: File[], budget: number,
+): Promise<{ teile: Bildteil[]; kante: number }> {
+  for (const kante of [1600, 1400, 1200, 1000, 850, 700]) {
+    const teile = await Promise.all(dateien.map((f) => alsTeil(f, kante, kante > 1000 ? 0.85 : 0.8)))
+    const gesamt = teile.reduce((n, t) => n + teilGroesse(t), 0)
+    if (gesamt <= budget || kante === 700) return { teile, kante }
+  }
+  return { teile: [], kante: 700 }
 }
 
 /**
@@ -864,7 +949,9 @@ function JobPanel({
       // PDFs gibt es hier nicht mehr — sie wurden beim Hochladen in einzelne
       // Seitenbilder zerlegt. Prompt-Schreiber und Bildmodell sehen dadurch
       // exakt dasselbe.
-      const compressed = await Promise.all(geordneteBilder.map((img) => compressImage(img.file)))
+      // Auch hier gilt die 4,5-MB-Grenze von Vercel, obwohl es multipart ist.
+      const compressed = await Promise.all(
+        geordneteBilder.map((img) => compressImage(img.file, geordneteBilder.length > 4 ? 1200 : 1600)))
       const formData = new FormData()
       compressed.forEach((f) => formData.append('images', f))
       // Der Gesicht-Lock setzt sich selbst, wenn der Auftragstext ihn sinngemäß
@@ -887,10 +974,7 @@ function JobPanel({
       if (promptMode === 'mockup' && mockupEnvironment) formData.append('mockupEnvironment', mockupEnvironment)
 
       const response = await fetch('/api/analyze', { method: 'POST', body: formData })
-      if (!response.ok) {
-        const err = await response.json().catch(() => ({ error: response.statusText }))
-        throw new Error(err.error || `Server error: ${response.status}`)
-      }
+      if (!response.ok) throw new Error(await fehlerText(response, 'Server-Fehler'))
       const reader = response.body!.getReader()
       const decoder = new TextDecoder()
       let accumulated = ''
@@ -945,19 +1029,17 @@ function JobPanel({
     setGenResults([]); setGenProgress({ done: 0, total: laeufe.length })
     try {
       const bilder = begrenze(geordneteBilder)
-      const referenceImages = await Promise.all(
-        bilder.map((img) => compressImage(img.file).then(
-          (compressed) => new Promise<{ mimeType: string; data: string }>((resolve) => {
-            const reader = new FileReader()
-            reader.onload = () => {
-              const dataUrl = reader.result as string
-              const [header, data] = dataUrl.split(',')
-              resolve({ mimeType: header.match(/data:([^;]+)/)?.[1] ?? 'image/jpeg', data })
-            }
-            reader.readAsDataURL(compressed)
-          }),
-        ))
-      )
+      // Der abgelehnte Versuch ist nur ein Gegenbeispiel — er braucht keine
+      // volle Auflösung und bekommt deshalb ein eigenes, kleines Budget.
+      const vorbild = korrektur?.vorbild
+        ? await verkleinereDatenUrl(korrektur.vorbild, 900)
+        : null
+      const vorbildGroesse = vorbild ? vorbild.data.length : 0
+      const { teile: referenceImages, kante } = await packeBilder(
+        bilder.map((b) => b.file), ANFRAGE_BUDGET_BYTES - vorbildGroesse)
+      if (kante < 1600) {
+        console.log(`[generate] Bilder auf ${kante} px verkleinert, damit die Anfrage durchgeht`)
+      }
       // Legende VOR den Prompt: Sie sagt für jede Bildnummer, was das Bild ist
       // und wie damit umzugehen ist. Die Identitätsklausel ans ENDE — beim
       // Bildmodell wiegt das zuletzt Gelesene schwerer, und die Identität muss
@@ -984,7 +1066,6 @@ function JobPanel({
       // Der misslungene Versuch geht als LETZTES Bild mit — der Korrekturblock
       // sagt ausdrücklich, dass es die abgelehnte Fassung ist und nichts davon
       // übernommen werden darf.
-      const vorbild = korrektur?.vorbild ? ausDatenUrl(korrektur.vorbild) : null
       const anBildmodell = vorbild ? [...referenceImages, vorbild] : referenceImages
 
       // Nacheinander statt parallel: So steht das erste Bild sofort da, jeder
@@ -1009,10 +1090,7 @@ function JobPanel({
               referenceImages: anBildmodell.length > 0 ? anBildmodell : undefined,
             }),
           })
-          if (!res.ok) {
-            const err = await res.json().catch(() => ({ error: res.statusText }))
-            throw new Error(err.error || `Server error: ${res.status}`)
-          }
+          if (!res.ok) throw new Error(await fehlerText(res, 'Server-Fehler'))
           const data = await res.json()
           fertig.push({ label: name, image: data.image })
           setGenResults([...fertig])
@@ -1060,26 +1138,28 @@ function JobPanel({
     setPruefung(null)
     try {
       const bilder = begrenze(geordneteBilder)
-      const referenzen = await Promise.all(bilder.map((img, i) =>
-        compressImage(img.file).then((klein) => new Promise<{ mimeType: string; data: string; rolle: string; nummer: number }>((fertig) => {
-          const leser = new FileReader()
-          leser.onload = () => {
-            const [kopf, daten] = (leser.result as string).split(',')
-            fertig({
-              mimeType: kopf.match(/data:([^;]+)/)?.[1] ?? 'image/jpeg',
-              data: daten, rolle: img.rolle, nummer: i + 1,
-            })
-          }
-          leser.readAsDataURL(klein)
-        }))))
+      // Zum Vergleichen genügt eine kleinere Kante als zum Generieren, und das
+      // zu prüfende Bild muss ja auch noch mit hinein.
+      const klein = await verkleinereDatenUrl(bild, 1100)
+      const { teile } = await packeBilder(
+        bilder.map((b) => b.file), ANFRAGE_BUDGET_BYTES - (klein?.data.length ?? 0))
+      const referenzen = teile.map((t, i) => ({
+        ...t, rolle: bilder[i].rolle, nummer: i + 1,
+      }))
       const res = await fetch('/api/pruefen', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         credentials: 'same-origin',
-        body: JSON.stringify({ bild, referenzen, auftrag: userDescription, prompt: letzterVolltext.current }),
+        body: JSON.stringify({
+          bild: klein ? `data:${klein.mimeType};base64,${klein.data}` : bild,
+          referenzen,
+          auftrag: userDescription,
+          // Der Prompt dient nur der Einordnung — gekürzt reicht und spart Platz.
+          prompt: letzterVolltext.current.slice(0, 6000),
+        }),
       })
+      if (!res.ok) throw new Error(await fehlerText(res, 'Prüfung fehlgeschlagen'))
       const daten = await res.json()
-      if (!res.ok) throw new Error(daten.error || 'Prüfung fehlgeschlagen')
       setPruefung(daten as Pruefergebnis)
       // Schwere Abweichungen sind vorausgewählt — die will man fast immer
       // beheben. Leichte wählt man bewusst dazu.
@@ -1898,10 +1978,7 @@ function AppMain({ userEmail, authEnabled, onLogout }: { userEmail: string | nul
             transparent: kannTransparenz(quickModel) && quickTransparent ? true : undefined,
           }),
         })
-        if (!res.ok) {
-          const err = await res.json().catch(() => ({ error: res.statusText }))
-          throw new Error(err.error || `Server error: ${res.status}`)
-        }
+        if (!res.ok) throw new Error(await fehlerText(res, 'Server-Fehler'))
         const data = await res.json()
         fertig.push(data.image)
         setQuickResults([...fertig])
