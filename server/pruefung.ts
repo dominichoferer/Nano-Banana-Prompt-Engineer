@@ -51,10 +51,14 @@ HOW TO JUDGE
    — a different object than the one supplied, or the supplied object in a different colour
    — the requested change not carried out at all, or carried out on the wrong element
    — content that is largely unrelated to the references
+   — a product with added, missing or merged holes, fins, slots or edges, or a changed silhouette
+   — a shadow or haze that is mottled, grainy, blotchy, cloud- or smoke-like, or spread over the
+     background — no client can use that, however good the product looks
    Do not answer false because the image itself looks competent — a well-made picture of the
    wrong thing is still the wrong thing, and it gets discarded all the same.
 3. Answer false only when the image is usable and merely needs polish: framing a little tight, a
-   mild colour cast, a shadow, a slightly off proportion. In doubt, answer true — an unnecessary
+   mild colour cast, a clean shadow that is a little too strong or too weak, a slightly off
+   proportion. In doubt, answer true — an unnecessary
    correction pass costs one run, a missed one costs the whole job.
 3b. WORKED EXAMPLE. Reference: a red product on a grey background. Brief: "keep the product,
    make the background white". Generated: an all-blue surface.
@@ -74,7 +78,13 @@ HOW TO JUDGE
    soon as one entry is true.
 8. Be concrete. "Colours are off" helps nobody; "the jacket is dark blue, the source shows it in
    black" does. Everything in German except the JSON keys.
-9. At most 6 entries. If there are more, report the six that matter most.`
+9. PRODUCTS. When the source material is an object, compare it feature by feature: count holes,
+   fins, ribs and slots in both images and name the numbers when they differ ("12 Bohrungen in
+   IMAGE 1, 10 im Ergebnis"). Check the hue of coloured or anodised surfaces and the finish.
+10. SHADOWS. A requested shadow must be a smooth tonal gradient touching the object. Look at the
+   area around the object: grey speckles, noise, stains or a cloudy veil there are a deviation
+   with "unbrauchbar": true, even when the brief asked for a shadow — they are not a shadow.
+11. At most 6 entries. If there are more, report the six that matter most.`
 
 interface Referenz {
   mimeType: string
@@ -107,6 +117,8 @@ export async function pruefeErgebnis(req: Request, res: Response): Promise<void>
     referenzen?: Referenz[]
     auftrag?: string
     prompt?: string
+    /** War das Ergebnis freigestellt? Dann liegt es hier auf Weiss. */
+    freigestellt?: boolean
   }
   const bild = body.bild ? ausDatenUrl(body.bild) : null
   if (!bild) {
@@ -126,7 +138,11 @@ export async function pruefeErgebnis(req: Request, res: Response): Promise<void>
     // Prüfung aber nicht dominieren — beurteilt wird das BILD.
     teile.push({ text: `THE PROMPT THAT WAS SENT (for context only — judge the image, not the prompt):\n${body.prompt.slice(0, 6000)}` })
   }
-  teile.push({ text: 'THE GENERATED IMAGE — this is what you are judging:' })
+  teile.push({ text: body.freigestellt
+    ? 'THE GENERATED IMAGE — this is what you are judging. It was delivered with a TRANSPARENT '
+      + 'background and is shown here flattened onto white: everything that is not pure white '
+      + 'around the product was in the alpha channel. Grey speckles or a veil there are a defect.'
+    : 'THE GENERATED IMAGE — this is what you are judging:' })
   teile.push({ inlineData: bild })
 
   let letzterFehler: unknown

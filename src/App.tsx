@@ -10,6 +10,11 @@ import { baueLegende, begrenze, setzeManifest } from './referenzen'
 import { willGesichtLock, identitaetsKlausel } from './identitaet'
 import type { Pruefergebnis, Abweichung } from './nachschaerfen'
 import { korrekturBlock, mitKorrektur, befund } from './nachschaerfen'
+import type { SchattenArt } from './schatten'
+import { SCHATTEN_ARTEN, schattenAusAuftrag, willFreigestellt } from './schatten'
+import type { SchattenQuelle } from './produkt'
+import { brauchtIdentitaet, produktKlausel, freistellKlausel, schattenKlausel } from './produkt'
+import SchattenStudio from './components/SchattenStudio'
 
 pdfjsLib.GlobalWorkerOptions.workerSrc = `https://unpkg.com/pdfjs-dist@${pdfjsLib.version}/build/pdf.worker.min.mjs`
 
@@ -176,7 +181,13 @@ function compressImage(file: File, maxKante = KOMPRESS_MAXKANTE, qualitaet = 0.8
       const h = Math.round(img.height * scale)
       const canvas = document.createElement('canvas')
       canvas.width = w; canvas.height = h
-      canvas.getContext('2d')!.drawImage(img, 0, 0, w, h)
+      const ctx = canvas.getContext('2d')!
+      // JPEG kennt keine Transparenz. Ohne diese Fläche wird ein freigestelltes
+      // Produkt-PNG auf SCHWARZ gesetzt, und das Modell hält den schwarzen
+      // Grund für einen Teil der Vorlage.
+      ctx.fillStyle = '#ffffff'
+      ctx.fillRect(0, 0, w, h)
+      ctx.drawImage(img, 0, 0, w, h)
       canvas.toBlob(
         (blob) => resolve(new File([blob!], file.name, { type: 'image/jpeg' })),
         'image/jpeg', qualitaet,
@@ -229,7 +240,12 @@ function verkleinereDatenUrl(url: string, maxKante: number, qualitaet = 0.8): Pr
       const c = document.createElement('canvas')
       c.width = Math.round(img.width * skala)
       c.height = Math.round(img.height * skala)
-      c.getContext('2d')!.drawImage(img, 0, 0, c.width, c.height)
+      const ctx = c.getContext('2d')!
+      // Auf Weiss statt Schwarz — sonst sah die Prüfung ein freigestelltes
+      // Ergebnis auf schwarzem Grund und meldete den falschen Hintergrund.
+      ctx.fillStyle = '#ffffff'
+      ctx.fillRect(0, 0, c.width, c.height)
+      ctx.drawImage(img, 0, 0, c.width, c.height)
       const daten = c.toDataURL('image/jpeg', qualitaet).split(',')[1]
       fertig({ mimeType: 'image/jpeg', data: daten })
     }
@@ -672,6 +688,10 @@ function JobPanel({
   // Freistellen können nur die gpt-image-2.5-Modelle. Der Schalter verschwindet
   // bei allen anderen, statt still wirkungslos zu bleiben.
   const [transparent, setTransparent] = useState(() => ausVorlage(v, 'transparent', false))
+  // Schatten: welche Art, und wer ihn macht, wenn freigestellt ausgegeben wird.
+  // `null` bei der Art heisst „aus dem Auftragstext ableiten".
+  const [schattenWahl, setSchattenWahl] = useState<SchattenArt | null>(() => ausVorlage<SchattenArt | null>(v, 'schattenWahl', null))
+  const [schattenQuelle, setSchattenQuelle] = useState<SchattenQuelle>(() => ausVorlage<SchattenQuelle>(v, 'schattenQuelle', 'app'))
   // Mehrere Bilder aus demselben Prompt, zum Auswählen. Bildmodelle sind nicht
   // deterministisch — der zweite Anlauf ist oft der bessere, und nebeneinander
   // sieht man das sofort.
@@ -692,6 +712,9 @@ function JobPanel({
   const [uebernommen, setUebernommen] = useState<Set<number>>(new Set())
   const [versuch, setVersuch] = useState(1)
   const [vorbildMitschicken, setVorbildMitschicken] = useState(true)
+  // Prompt optimieren: der Prompt selbst wird überarbeitet, nicht nur ergänzt.
+  const [optimiereLaeuft, setOptimiereLaeuft] = useState(false)
+  const [optimiert, setOptimiert] = useState<{ diagnose: string; aenderungen: string[]; fehler?: string } | null>(null)
   /** Der zuletzt abgeschickte Volltext — Grundlage jeder Nachbesserung. */
   const letzterVolltext = useRef('')
   // Über eine Referenz, damit sich handleGenerate und pruefeBild nicht
@@ -707,6 +730,7 @@ function JobPanel({
     [aktiveModelle, selectedModel])
   const alleGpt = aktiveModelle.every(istGpt)
   const alleTransparenz = aktiveModelle.length > 0 && aktiveModelle.every(kannTransparenz)
+  const schattenArt: SchattenArt | null = schattenWahl ?? schattenAusAuftrag(userDescription)
   const availableResolutions: Array<'auto' | '1K' | '2K' | '4K'> =
     alleGpt ? ['auto', '1K', '2K', '4K'] : ['1K', '2K', '4K']
 
@@ -944,6 +968,9 @@ function JobPanel({
 
   const handleAnalyze = useCallback(async () => {
     if (images.length === 0 && promptMode !== 'generation') return
+    // Steht „transparent" oder „freigestellt" im Auftrag, gleich richtig
+    // einstellen — der Schalter sitzt weiter unten und wird leicht übersehen.
+    if (willFreigestellt(userDescription) && alleTransparenz) setTransparent(true)
     setAnalysisStatus('analyzing'); setAnalysisError(null); setPrompt(''); setDenkSchritt('')
     try {
       // PDFs gibt es hier nicht mehr — sie wurden beim Hochladen in einzelne
@@ -1007,7 +1034,7 @@ function JobPanel({
       setAnalysisStatus('error')
       setDenkSchritt('')
     }
-  }, [geordneteBilder, userDescription, promptMode, changeAreas, mockupType, mockupEnvironment])
+  }, [geordneteBilder, userDescription, promptMode, changeAreas, mockupType, mockupEnvironment, alleTransparenz])
 
   /**
    * Generieren — und mit `korrektur` zugleich das Nachschärfen.
@@ -1021,7 +1048,7 @@ function JobPanel({
   const handleGenerate = useCallback(async (korrektur?: { block: string; vorbild?: string }) => {
     if (!prompt.trim()) return
     setGenerationStatus('generating'); setGenerationError(null); setGeneratedImage(null)
-    setPruefung(null)
+    setPruefung(null); setOptimiert(null)
     // Jede Variante läuft auf jedem gewählten Modell. Nach Variante gruppiert,
     // damit früh je ein Ergebnis pro Modell dasteht.
     const laeufe = Array.from({ length: variantCount }, (_, i) => i + 1)
@@ -1048,7 +1075,20 @@ function JobPanel({
         ...referenceImages[i], rolle: img.rolle, zeigt: img.name,
       }))
       const legende = baueLegende(rollenListe)
-      const klausel = identitaetsKlausel(nummernMit('ausgang'), nummernMit('ziel'))
+      // Am Ende steht, was jede freiere Formulierung davor überstimmen muss.
+      // Ein Gesicht nur dann, wenn überhaupt ein Mensch im Spiel ist — bei
+      // einem Produktfoto stattdessen die Treue zum Teil.
+      const mitMensch = brauchtIdentitaet(prompt,
+        bilder.some((b) => b.rolle === 'person'), bilder.some((b) => b.faceLock))
+      const freistellen = transparent && aktiveModelle.every(kannTransparenz)
+      const klausel = [
+        mitMensch
+          ? identitaetsKlausel(nummernMit('ausgang'), nummernMit('ziel'))
+          // Beim Mockup ist das Ausgangsmaterial eine Druckvorlage, kein
+          // Bauteil — dort gelten die Regeln fürs Artwork im JSON.
+          : promptMode === 'mockup' ? '' : produktKlausel(nummernMit('ausgang')),
+        freistellen ? freistellKlausel(schattenQuelle, schattenArt) : schattenKlausel(schattenArt),
+      ].filter(Boolean).join('\n\n')
       // Der Prompt-Schreiber kennt die endgültige Reihenfolge nicht sicher —
       // er sieht die Bilder, aber die Liste wird hier gebildet. Deshalb wird
       // der Block `reference_images` deterministisch gesetzt statt ihm
@@ -1118,7 +1158,7 @@ function JobPanel({
       setGenProgress(null)
     }
   }, [prompt, aktiveModelle, selectedResolution, selectedAspectRatio, selectedOutputFormat,
-      transparent, variantCount, geordneteBilder, nummernMit])
+      transparent, variantCount, geordneteBilder, nummernMit, schattenQuelle, schattenArt, promptMode])
 
   // Dem Elternteil einen Lesezugriff auf den aktuellen Stand geben. Nur so
   // lässt sich ein Auftrag duplizieren, ohne den gesamten Zustand nach oben zu
@@ -1128,7 +1168,7 @@ function JobPanel({
   standRef.current = () => ({
     images, userDescription, promptMode, changeAreas, mockupType, mockupEnvironment, prompt,
     aktiveFamilien, familienModell, selectedResolution, selectedAspectRatio, selectedOutputFormat,
-    transparent, variantCount,
+    transparent, variantCount, schattenWahl, schattenQuelle,
   })
   useEffect(() => { onAbzug?.(() => standRef.current()) }, [onAbzug])
 
@@ -1156,6 +1196,7 @@ function JobPanel({
           auftrag: userDescription,
           // Der Prompt dient nur der Einordnung — gekürzt reicht und spart Platz.
           prompt: letzterVolltext.current.slice(0, 6000),
+          freigestellt: transparent,
         }),
       })
       if (!res.ok) throw new Error(await fehlerText(res, 'Prüfung fehlgeschlagen'))
@@ -1176,8 +1217,47 @@ function JobPanel({
     } finally {
       setPruefLaeuft(false)
     }
-  }, [geordneteBilder, userDescription])
+  }, [geordneteBilder, userDescription, transparent])
   pruefeBildRef.current = pruefeBild
+
+  /**
+   * Prompt optimieren: Ergebnis, Befund und eigene Kritik gehen an den
+   * Prompt-Schreiber, der den Prompt gezielt überarbeitet. Der neue Prompt
+   * landet oben im Feld — sichtbar und editierbar, bevor Geld für ein Bild
+   * ausgegeben wird.
+   */
+  const handleOptimieren = useCallback(async () => {
+    if (!generatedImage || !prompt.trim()) return
+    setOptimiereLaeuft(true); setOptimiert(null)
+    try {
+      const bilder = begrenze(geordneteBilder)
+      const klein = await verkleinereDatenUrl(generatedImage, 1100)
+      const { teile } = await packeBilder(
+        bilder.map((b) => b.file), ANFRAGE_BUDGET_BYTES - (klein?.data.length ?? 0) - prompt.length * 2)
+      const res = await fetch('/api/optimieren', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        credentials: 'same-origin',
+        body: JSON.stringify({
+          prompt,
+          auftrag: userDescription,
+          anmerkung: nachschaerfText,
+          abweichungen: (pruefung?.abweichungen ?? []).filter((_, i) => uebernommen.has(i)),
+          bild: klein ? `data:${klein.mimeType};base64,${klein.data}` : undefined,
+          referenzen: teile.map((t, i) => ({ ...t, rolle: bilder[i].rolle, nummer: i + 1 })),
+          freigestellt: transparent,
+        }),
+      })
+      if (!res.ok) throw new Error(await fehlerText(res, 'Optimierung fehlgeschlagen'))
+      const daten = await res.json()
+      setPrompt(daten.prompt)
+      setOptimiert({ diagnose: daten.diagnose ?? '', aenderungen: daten.aenderungen ?? [] })
+    } catch (e) {
+      setOptimiert({ diagnose: '', aenderungen: [], fehler: e instanceof Error ? e.message : 'Fehler' })
+    } finally {
+      setOptimiereLaeuft(false)
+    }
+  }, [generatedImage, prompt, geordneteBilder, userDescription, nachschaerfText, pruefung, uebernommen, transparent])
 
   /** Nachschärfen: derselbe Prompt, dieselben Referenzen, plus Korrektur. */
   const handleNachschaerfen = useCallback(() => {
@@ -1497,16 +1577,70 @@ function JobPanel({
                 </div>
               </div>
 
-              <button onClick={handleNachschaerfen}
-                disabled={!nachschaerfText.trim() && uebernommen.size === 0}
-                className="btn-secondary w-full py-3">
-                <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2}
-                    d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" />
-                </svg>
-                Korrigiert neu generieren
-              </button>
+              {/* Zwei Wege: Korrektur ANHÄNGEN (ein einzelner Punkt lag daneben)
+                  oder den Prompt selbst ÜBERARBEITEN (er war zu vage oder
+                  widersprüchlich). */}
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
+                <button onClick={handleNachschaerfen}
+                  disabled={!nachschaerfText.trim() && uebernommen.size === 0}
+                  title="Der Prompt bleibt, die Korrektur kommt als eigener Block ans Ende"
+                  className="btn-secondary w-full py-3">
+                  <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2}
+                      d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" />
+                  </svg>
+                  Korrigiert neu generieren
+                </button>
+                <button onClick={handleOptimieren} disabled={optimiereLaeuft}
+                  title="Ergebnis, Befund und deine Anmerkung gehen an den Prompt-Schreiber — er findet die Ursache und schreibt den Prompt präziser"
+                  className="btn-secondary w-full py-3">
+                  <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2}
+                      d="M9.663 17h4.673M12 3v1m6.364 1.636l-.707.707M21 12h-1M4 12H3m3.343-5.657l-.707-.707m2.828 9.9a5 5 0 117.072 0l-.548.547A3.374 3.374 0 0014 18.469V19a2 2 0 11-4 0v-.531c0-.895-.356-1.754-.988-2.386l-.548-.547z" />
+                  </svg>
+                  {optimiereLaeuft ? 'Prompt wird optimiert…' : 'Prompt optimieren'}
+                </button>
+              </div>
+
+              {optimiert && (
+                <div className={`flex flex-col gap-2 p-3 rounded-xl border text-xs font-sans animate-fade-in
+                  ${optimiert.fehler ? 'bg-red-50 border-red-200 text-red-700' : 'bg-heron-50 border-heron-200 text-ink-700'}`}>
+                  {optimiert.fehler
+                    ? <span>Optimierung fehlgeschlagen: {optimiert.fehler}</span>
+                    : (
+                      <>
+                        {optimiert.diagnose && (
+                          <span><span className="font-medium">Ursache:</span> {optimiert.diagnose}</span>
+                        )}
+                        {optimiert.aenderungen.length > 0 && (
+                          <ul className="list-disc pl-4 flex flex-col gap-0.5 text-ink-600">
+                            {optimiert.aenderungen.map((a, i) => <li key={i}>{a}</li>)}
+                          </ul>
+                        )}
+                        <span className="text-[11px] text-ink-400">
+                          Der neue Prompt steht oben im Feld und lässt sich dort noch anpassen.
+                        </span>
+                        <button onClick={() => { setVersuch((n) => n + 1); void handleGenerate() }}
+                          className="btn-primary w-full py-2.5 text-sm">
+                          Mit optimiertem Prompt generieren
+                        </button>
+                      </>
+                    )}
+                </div>
+              )}
             </div>
+          )}
+
+          {/* Schatten von der App: taucht nur auf, wenn das Ergebnis wirklich
+              freigestellt ist. */}
+          {generatedImage && generationStatus === 'done' && (
+            <SchattenStudio bild={generatedImage} startArt={schattenArt}
+              onUebernehmen={(url, art) => {
+                const label = `Mit ${SCHATTEN_ARTEN.find((a) => a.id === art)?.label ?? 'Schatten'}`
+                setGenResults((prev) => [...(prev.length > 0 ? prev : [{ label: 'Ergebnis', image: generatedImage }]),
+                  { label, image: url }])
+                setGeneratedImage(url)
+              }} />
           )}
 
           {/* Fortschritt über die Serie. Ohne ihn sieht es bei drei Varianten
@@ -1684,6 +1818,44 @@ function JobPanel({
               </span>
             </label>
           )}
+          {/* Schatten: welche Art, und — bei freigestellter Ausgabe — wer ihn
+              macht. Die Art ist aus dem Auftragstext vorbelegt. */}
+          <div className="flex flex-col gap-1.5">
+            <span className="label-section">Schatten</span>
+            <div className="flex flex-wrap gap-1.5">
+              {([{ id: null, label: 'Ohne' }, ...SCHATTEN_ARTEN.filter((a) => a.id !== 'keiner')] as Array<{ id: SchattenArt | null; label: string; hint?: string }>).map((a) => {
+                const aktiv = (schattenArt ?? null) === a.id
+                return (
+                  <button key={a.id ?? 'ohne'} type="button" title={a.hint}
+                    onClick={() => setSchattenWahl(a.id ?? 'keiner')}
+                    className={`px-3 py-1.5 rounded-lg text-xs font-sans font-medium transition-all
+                      ${aktiv || (a.id === null && schattenArt === 'keiner') ? 'bg-heron-500 text-white shadow-sm' : 'bg-cream-100 text-ink-500 hover:bg-cream-200'}`}>
+                    {a.label}
+                  </button>
+                )
+              })}
+            </div>
+            {transparent && alleTransparenz && schattenArt && schattenArt !== 'keiner' && (
+              <div className="flex flex-col gap-1 mt-1">
+                <div className="bg-cream-100 rounded-xl p-1 flex gap-1">
+                  {([
+                    { id: 'app', label: 'Schatten von der App' },
+                    { id: 'modell', label: 'Schatten vom Modell' },
+                  ] as const).map((q) => (
+                    <button key={q.id} type="button" onClick={() => setSchattenQuelle(q.id)}
+                      className={`mode-btn text-xs py-2 ${schattenQuelle === q.id ? 'mode-btn-active' : 'mode-btn-inactive'}`}>
+                      {q.label}
+                    </button>
+                  ))}
+                </div>
+                <span className="text-[10px] font-sans text-ink-400 leading-snug px-0.5">
+                  {schattenQuelle === 'app'
+                    ? 'Das Modell stellt nur frei, die App legt danach einen glatten Schatten darunter — regelbar, und das Produkt bleibt pixelgleich. Der verlässliche Weg.'
+                    : 'Das Modell legt den Schatten selbst in den Alphakanal. Mit genauer Vorgabe besser als früher, kann aber weiterhin fleckig kommen — dann unten „Nur säubern“ oder einen App-Schatten nehmen.'}
+                </span>
+              </div>
+            )}
+          </div>
           {alleGpt && (
             <div className="flex flex-col gap-1.5">
               <span className="label-section">Output-Format</span>

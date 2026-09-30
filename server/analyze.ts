@@ -132,7 +132,30 @@ RULES
     trailing commas, no comments.
 16. Check the budget from rule 1 before you output. If the object is over 3000 characters, cut
     the keys that add least — "materials_and_texture", "notes", generic "camera" or "scene"
-    values — not "changes" or "preserve".`
+    values — not "changes" or "preserve".
+17. PRODUCT SHOTS (a technical part, device, packaging — no person). The object is the master:
+    — In "preserve", name what makes THIS object this object, from what you see: the count and
+      layout of holes, threads, slots, fins, ribs and pockets ("12 tapped holes in a ring around
+      the central bore", "9 horizontal cooling fins on the left face"), silhouette, viewing angle,
+      Count twice; when you cannot be certain, describe without a number — a wrong count is
+      worse than none, because the image model will obey it.
+      the surface finish (anodised hue, brushed, bead-blasted, machining marks, gloss) and any
+      engraved text verbatim. Tolerance pixel_exact. Counting is the point — "several holes" is a
+      failure.
+    — "negative" lists the concrete ways this object gets ruined: added or missing holes, merged
+      fins, rounded sharp edges, warped straight lines, hue shift of the anodising, invented
+      engraving.
+    — SHADOWS AND REFLECTIONS are specified physically, never as a bare "with shadow": one light
+      direction that matches the highlights; a contact shadow darkest in a thin line where the
+      object meets the ground and fading smoothly within about a tenth of its height; a reflection
+      as a vertically flipped copy directly beneath the base, fading to nothing within a third of
+      its height. Always add to "negative": "mottled, grainy, blotchy or cloud-like shadow",
+      "smoke or haze around the product".
+    — TRANSPARENT BACKGROUND requested ("transparent", "freigestellt", "ohne Hintergrund"): say in
+      "output" that the background is alpha 0 everywhere outside the product, with no floor, no
+      haze and no painted checkerboard, and that the product is fully opaque. Do not describe a
+      backdrop. How the shadow is handled is appended separately after your JSON — do not write
+      alpha values yourself.`
 
 /**
  * Wie gründlich der Prompt-Schreiber arbeitet. Die Stufe kostet Wartezeit:
@@ -161,7 +184,7 @@ type Anbieter = 'gemini' | 'claude'
 const GEWUENSCHTER_ANBIETER: Anbieter =
   process.env.PROMPT_ANBIETER?.trim().toLowerCase() === 'claude' ? 'claude' : 'gemini'
 
-function waehleAnbieter(): Anbieter {
+export function waehleAnbieter(): Anbieter {
   const hatGemini = Boolean(process.env.GOOGLE_AI_API_KEY)
   const hatClaude = Boolean(process.env.ANTHROPIC_API_KEY)
   if (GEWUENSCHTER_ANBIETER === 'gemini') return hatGemini ? 'gemini' : 'claude'
@@ -170,7 +193,7 @@ function waehleAnbieter(): Anbieter {
 
 // `gemini-flash-latest` ist ein mitlaufender Alias auf das jeweils aktuelle
 // Flash — dadurch bricht nichts weg, wenn Google eine Version abschaltet.
-const GEMINI_PROMPT_MODELS = ['gemini-flash-latest', 'gemini-3-flash-preview']
+export const GEMINI_PROMPT_MODELS = ['gemini-flash-latest', 'gemini-3-flash-preview']
 
 /** Kurzfassung der Rolle, wie sie direkt vor jedem Bild steht. */
 const ROLLEN_NAME_KURZ: Record<string, string> = {

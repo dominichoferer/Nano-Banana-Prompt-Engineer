@@ -5,7 +5,7 @@ verwandten Bildgenerierungs-Werkzeug**. Beide Projekte stammen aus demselben Urs
 (gleiche Dateistruktur: `server/analyze.ts`, `server/generate.ts`, `api/index.ts`,
 `src/App.tsx`); das andere ist seither deutlich weitergewachsen.
 
-**Quellprojekt:** `/Users/hod/Documents/VS Code/sca-ai-studio`
+**Quellprojekt:** `/Users/hod/Documents/VS Code + Claude/Sonstiges/sca-ai-studio`
 Die hier beschriebenen Änderungen liegen dort in den Commits `c5065a7` (Modelle,
 Identität) und `11f8d0d` (Sicherheit).
 

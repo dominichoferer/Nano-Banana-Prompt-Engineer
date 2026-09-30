@@ -5,6 +5,7 @@ import type { Request, Response } from 'express'
 import { mountAuthRoutes, requireAuth } from '../server/auth.js'
 import { holeBild } from '../server/bildholen.js'
 import { pruefeErgebnis } from '../server/pruefung.js'
+import { optimierePrompt } from '../server/optimieren.js'
 import { analyzeImages } from '../server/analyze.js'
 
 const app = express()
@@ -256,6 +257,8 @@ app.post('/api/bild-holen', requireAuth, holeBild)
 // Das erzeugte Bild gegen Referenzen und Auftrag halten — die Grundlage
 // fürs Nachschärfen.
 app.post('/api/pruefen', requireAuth, pruefeErgebnis)
+// Den Prompt selbst verbessern, wenn ein Ergebnis nicht getaugt hat.
+app.post('/api/optimieren', requireAuth, optimierePrompt)
 
 app.post('/api/generate', requireAuth, async (req: Request, res: Response) => {
   try {

@@ -8,6 +8,7 @@ import { analyzeImages } from './analyze.js'
 import { generateImage } from './generate.js'
 import { holeBild } from './bildholen.js'
 import { pruefeErgebnis } from './pruefung.js'
+import { optimierePrompt } from './optimieren.js'
 import { mountAuthRoutes, requireAuth, isAuthEnabled } from './auth.js'
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url))
@@ -46,6 +47,8 @@ app.post('/api/bild-holen', requireAuth, holeBild)
 // Das erzeugte Bild gegen Referenzen und Auftrag halten — die Grundlage
 // fürs Nachschärfen.
 app.post('/api/pruefen', requireAuth, pruefeErgebnis)
+// Den Prompt selbst verbessern, wenn ein Ergebnis nicht getaugt hat.
+app.post('/api/optimieren', requireAuth, optimierePrompt)
 
 // Serve React build in production
 const clientBuildPath = path.join(__dirname, '../client')
