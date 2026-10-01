@@ -690,6 +690,10 @@ function JobPanel({
   const [transparent, setTransparent] = useState(() => ausVorlage(v, 'transparent', false))
   // Schatten: welche Art, und wer ihn macht, wenn freigestellt ausgegeben wird.
   // `null` bei der Art heisst „aus dem Auftragstext ableiten".
+  // Produktfoto: schaltet Schatten, Spiegelung und die Produkttreue frei. Nur
+  // in der Foto-Retusche — bei Personen, Mockups und neuen Bildern hätten
+  // diese Regeln nichts verloren.
+  const [produktfoto, setProduktfoto] = useState(() => ausVorlage(v, 'produktfoto', false))
   const [schattenWahl, setSchattenWahl] = useState<SchattenArt | null>(() => ausVorlage<SchattenArt | null>(v, 'schattenWahl', null))
   const [schattenQuelle, setSchattenQuelle] = useState<SchattenQuelle>(() => ausVorlage<SchattenQuelle>(v, 'schattenQuelle', 'app'))
   // Mehrere Bilder aus demselben Prompt, zum Auswählen. Bildmodelle sind nicht
@@ -730,7 +734,10 @@ function JobPanel({
     [aktiveModelle, selectedModel])
   const alleGpt = aktiveModelle.every(istGpt)
   const alleTransparenz = aktiveModelle.length > 0 && aktiveModelle.every(kannTransparenz)
-  const schattenArt: SchattenArt | null = schattenWahl ?? schattenAusAuftrag(userDescription)
+  const produktAktiv = promptMode === 'retouch' && produktfoto
+  const schattenArt: SchattenArt | null = produktAktiv
+    ? (schattenWahl ?? schattenAusAuftrag(userDescription))
+    : null
   const availableResolutions: Array<'auto' | '1K' | '2K' | '4K'> =
     alleGpt ? ['auto', '1K', '2K', '4K'] : ['1K', '2K', '4K']
 
@@ -996,6 +1003,7 @@ function JobPanel({
       formData.append('imageSettings', JSON.stringify(imageSettings))
       if (userDescription.trim()) formData.append('userDescription', userDescription.trim())
       formData.append('promptMode', promptMode)
+      if (produktAktiv) formData.append('produktfoto', '1')
       if (changeAreas.length > 0) formData.append('changeAreas', changeAreas.join(','))
       if (promptMode === 'mockup' && mockupType) formData.append('mockupType', mockupType)
       if (promptMode === 'mockup' && mockupEnvironment) formData.append('mockupEnvironment', mockupEnvironment)
@@ -1034,7 +1042,7 @@ function JobPanel({
       setAnalysisStatus('error')
       setDenkSchritt('')
     }
-  }, [geordneteBilder, userDescription, promptMode, changeAreas, mockupType, mockupEnvironment, alleTransparenz])
+  }, [geordneteBilder, userDescription, promptMode, changeAreas, mockupType, mockupEnvironment, alleTransparenz, produktAktiv])
 
   /**
    * Generieren — und mit `korrektur` zugleich das Nachschärfen.
@@ -1084,9 +1092,10 @@ function JobPanel({
       const klausel = [
         mitMensch
           ? identitaetsKlausel(nummernMit('ausgang'), nummernMit('ziel'))
-          // Beim Mockup ist das Ausgangsmaterial eine Druckvorlage, kein
-          // Bauteil — dort gelten die Regeln fürs Artwork im JSON.
-          : promptMode === 'mockup' ? '' : produktKlausel(nummernMit('ausgang')),
+          // Die Treue zum Bauteil nur, wenn ausdrücklich ein Produktfoto
+          // retuschiert wird — beim Mockup ist das Ausgangsmaterial eine
+          // Druckvorlage, dort gelten die Artwork-Regeln im JSON.
+          : produktAktiv ? produktKlausel(nummernMit('ausgang')) : '',
         freistellen ? freistellKlausel(schattenQuelle, schattenArt) : schattenKlausel(schattenArt),
       ].filter(Boolean).join('\n\n')
       // Der Prompt-Schreiber kennt die endgültige Reihenfolge nicht sicher —
@@ -1158,7 +1167,7 @@ function JobPanel({
       setGenProgress(null)
     }
   }, [prompt, aktiveModelle, selectedResolution, selectedAspectRatio, selectedOutputFormat,
-      transparent, variantCount, geordneteBilder, nummernMit, schattenQuelle, schattenArt, promptMode])
+      transparent, variantCount, geordneteBilder, nummernMit, schattenQuelle, schattenArt, produktAktiv])
 
   // Dem Elternteil einen Lesezugriff auf den aktuellen Stand geben. Nur so
   // lässt sich ein Auftrag duplizieren, ohne den gesamten Zustand nach oben zu
@@ -1168,7 +1177,7 @@ function JobPanel({
   standRef.current = () => ({
     images, userDescription, promptMode, changeAreas, mockupType, mockupEnvironment, prompt,
     aktiveFamilien, familienModell, selectedResolution, selectedAspectRatio, selectedOutputFormat,
-    transparent, variantCount, schattenWahl, schattenQuelle,
+    transparent, variantCount, schattenWahl, schattenQuelle, produktfoto,
   })
   useEffect(() => { onAbzug?.(() => standRef.current()) }, [onAbzug])
 
@@ -1380,6 +1389,63 @@ function JobPanel({
                 ))}
               </div>
             </div>
+          </div>
+        )}
+
+        {/* Produktfoto — schaltet Schatten und Spiegelung frei. Nur in der
+            Foto-Retusche. */}
+        {promptMode === 'retouch' && (
+          <div className="flex flex-col gap-2">
+            <label className="flex items-start gap-2 cursor-pointer">
+              <input type="checkbox" checked={produktfoto}
+                onChange={(e) => setProduktfoto(e.target.checked)}
+                disabled={analysisStatus === 'analyzing'}
+                className="mt-0.5 accent-heron-500" />
+              <span className="flex flex-col">
+                <span className="text-xs font-sans font-medium text-ink-700">Produktfoto</span>
+                <span className="text-[10px] font-sans text-ink-400 leading-snug">
+                  Ein Bauteil oder Produkt statt einer Person: Geometrie, Bohrungen, Oberfläche
+                  und Gravuren bleiben exakt — und Schatten oder Spiegelung lassen sich wählen.
+                </span>
+              </span>
+            </label>
+            {produktfoto && (
+              <div className="flex flex-col gap-1.5 pl-6">
+                <span className="label-section">Schatten</span>
+                <div className="flex flex-wrap gap-1.5">
+                  {([{ id: null, label: 'Ohne' }, ...SCHATTEN_ARTEN.filter((a) => a.id !== 'keiner')] as Array<{ id: SchattenArt | null; label: string; hint?: string }>).map((a) => {
+                    const aktiv = a.id === null ? (!schattenArt || schattenArt === 'keiner') : schattenArt === a.id
+                    return (
+                      <button key={a.id ?? 'ohne'} type="button" title={a.hint}
+                        onClick={() => setSchattenWahl(a.id ?? 'keiner')}
+                        className={aktiv ? 'chip-change-active' : 'chip-change'}>
+                        {a.label}
+                      </button>
+                    )
+                  })}
+                </div>
+                {schattenArt && schattenArt !== 'keiner' && (
+                  <div className="flex flex-col gap-1 mt-1">
+                    <div className="bg-cream-100 rounded-xl p-1 flex gap-1">
+                      {([
+                        { id: 'app', label: 'Schatten von der App' },
+                        { id: 'modell', label: 'Schatten vom Modell' },
+                      ] as const).map((q) => (
+                        <button key={q.id} type="button" onClick={() => setSchattenQuelle(q.id)}
+                          className={`mode-btn text-xs py-2 ${schattenQuelle === q.id ? 'mode-btn-active' : 'mode-btn-inactive'}`}>
+                          {q.label}
+                        </button>
+                      ))}
+                    </div>
+                    <span className="text-[10px] font-sans text-ink-400 leading-snug px-0.5">
+                      {schattenQuelle === 'app'
+                        ? 'Bei freigestellter Ausgabe stellt das Modell nur frei, die App legt danach einen glatten Schatten darunter — regelbar, das Produkt bleibt pixelgleich. Der verlässliche Weg.'
+                        : 'Das Modell legt den Schatten selbst an. Auf weissem Grund gut, freigestellt kann er weiterhin fleckig kommen — dann unter dem Ergebnis „Nur säubern“ oder einen App-Schatten nehmen.'}
+                    </span>
+                  </div>
+                )}
+              </div>
+            )}
           </div>
         )}
 
@@ -1633,7 +1699,7 @@ function JobPanel({
 
           {/* Schatten von der App: taucht nur auf, wenn das Ergebnis wirklich
               freigestellt ist. */}
-          {generatedImage && generationStatus === 'done' && (
+          {produktAktiv && generatedImage && generationStatus === 'done' && (
             <SchattenStudio bild={generatedImage} startArt={schattenArt}
               onUebernehmen={(url, art) => {
                 const label = `Mit ${SCHATTEN_ARTEN.find((a) => a.id === art)?.label ?? 'Schatten'}`
@@ -1818,44 +1884,6 @@ function JobPanel({
               </span>
             </label>
           )}
-          {/* Schatten: welche Art, und — bei freigestellter Ausgabe — wer ihn
-              macht. Die Art ist aus dem Auftragstext vorbelegt. */}
-          <div className="flex flex-col gap-1.5">
-            <span className="label-section">Schatten</span>
-            <div className="flex flex-wrap gap-1.5">
-              {([{ id: null, label: 'Ohne' }, ...SCHATTEN_ARTEN.filter((a) => a.id !== 'keiner')] as Array<{ id: SchattenArt | null; label: string; hint?: string }>).map((a) => {
-                const aktiv = (schattenArt ?? null) === a.id
-                return (
-                  <button key={a.id ?? 'ohne'} type="button" title={a.hint}
-                    onClick={() => setSchattenWahl(a.id ?? 'keiner')}
-                    className={`px-3 py-1.5 rounded-lg text-xs font-sans font-medium transition-all
-                      ${aktiv || (a.id === null && schattenArt === 'keiner') ? 'bg-heron-500 text-white shadow-sm' : 'bg-cream-100 text-ink-500 hover:bg-cream-200'}`}>
-                    {a.label}
-                  </button>
-                )
-              })}
-            </div>
-            {transparent && alleTransparenz && schattenArt && schattenArt !== 'keiner' && (
-              <div className="flex flex-col gap-1 mt-1">
-                <div className="bg-cream-100 rounded-xl p-1 flex gap-1">
-                  {([
-                    { id: 'app', label: 'Schatten von der App' },
-                    { id: 'modell', label: 'Schatten vom Modell' },
-                  ] as const).map((q) => (
-                    <button key={q.id} type="button" onClick={() => setSchattenQuelle(q.id)}
-                      className={`mode-btn text-xs py-2 ${schattenQuelle === q.id ? 'mode-btn-active' : 'mode-btn-inactive'}`}>
-                      {q.label}
-                    </button>
-                  ))}
-                </div>
-                <span className="text-[10px] font-sans text-ink-400 leading-snug px-0.5">
-                  {schattenQuelle === 'app'
-                    ? 'Das Modell stellt nur frei, die App legt danach einen glatten Schatten darunter — regelbar, und das Produkt bleibt pixelgleich. Der verlässliche Weg.'
-                    : 'Das Modell legt den Schatten selbst in den Alphakanal. Mit genauer Vorgabe besser als früher, kann aber weiterhin fleckig kommen — dann unten „Nur säubern“ oder einen App-Schatten nehmen.'}
-                </span>
-              </div>
-            )}
-          </div>
           {alleGpt && (
             <div className="flex flex-col gap-1.5">
               <span className="label-section">Output-Format</span>

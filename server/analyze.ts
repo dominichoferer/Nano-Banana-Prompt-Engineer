@@ -133,7 +133,7 @@ RULES
 16. Check the budget from rule 1 before you output. If the object is over 3000 characters, cut
     the keys that add least — "materials_and_texture", "notes", generic "camera" or "scene"
     values — not "changes" or "preserve".
-17. PRODUCT SHOTS (a technical part, device, packaging — no person). The object is the master:
+17. PRODUCT SHOTS — applies ONLY when the request is marked "PRODUCT SHOT". The object is the master:
     — In "preserve", name what makes THIS object this object, from what you see: the count and
       layout of holes, threads, slots, fins, ribs and pockets ("12 tapped holes in a ring around
       the central bore", "9 horizontal cooling fins on the left face"), silhouette, viewing angle,
@@ -470,6 +470,7 @@ export function buildUserMessage(
   changeAreas?: string[],
   mockupType?: string,
   mockupEnvironment?: string,
+  produktfoto?: boolean,
 ): string {
   const count = imageSettings.length
   const isGeneration = promptMode === 'generation'
@@ -649,9 +650,13 @@ number, never a filename and never "the other one".`
       ? '\nDo NOT fill "lighting", "color" or "scene.background" — they were not requested.'
       : '')
 
+  const produktHinweis = produktfoto
+    ? '\nPRODUCT SHOT — the source material is a product or technical part, not a person. Apply rule 17 in full.\n'
+    : ''
+
   return `USE THE UPLOADED PHOTO(S) AS STRICT REFERENCE BASE.
 THIS IS A PHOTO RETOUCH — NOT A NEW IMAGE GENERATION.
-
+${produktHinweis}
 ${imageRefSection}${rollenBlock}${locksSection}${changeSection}${userBlock}${instruction}
 
 ═══════════════════════════════════════════
@@ -677,6 +682,7 @@ export async function analyzeImages(req: Request, res: Response) {
     const changeAreas = changeAreasRaw ? changeAreasRaw.split(',').filter(Boolean) : []
     const mockupType = req.body?.mockupType as string | undefined
     const mockupEnvironment = req.body?.mockupEnvironment as string | undefined
+    const produktfoto = req.body?.produktfoto === '1'
 
     // Parse per-image settings (new format)
     let imageSettings: ImageSetting[] = []
@@ -705,7 +711,7 @@ export async function analyzeImages(req: Request, res: Response) {
 
     const anbieter = waehleAnbieter()
     const auftragstext = buildUserMessage(
-      imageSettings, userDescription, promptMode, changeAreas, mockupType, mockupEnvironment)
+      imageSettings, userDescription, promptMode, changeAreas, mockupType, mockupEnvironment, produktfoto)
 
     if (anbieter === 'gemini') {
       if (!process.env.GOOGLE_AI_API_KEY) {
