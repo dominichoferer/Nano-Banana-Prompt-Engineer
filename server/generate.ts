@@ -12,7 +12,7 @@ interface OpenAIImageResponse {
   error?: { message: string; type?: string; code?: string }
 }
 
-type GenModel = 'flare' | 'sunburst' | 'openai' | 'pro' | 'flash'
+type GenModel = 'flare' | 'sunburst' | 'openai' | 'pro' | 'flash' | 'nb21'
 type OpenAIFormat = 'auto' | 'png' | 'jpeg' | 'webp'
 
 interface GenerateBody {
@@ -30,9 +30,13 @@ interface GenerateBody {
 
 const GEMINI_RATIOS = new Set(['1:1', '16:9', '9:16', '4:3', '3:4', '4:5', '5:4'])
 
-const GEMINI_MODEL_IDS: Record<'pro' | 'flash', string> = {
+const GEMINI_MODEL_IDS: Record<'pro' | 'flash' | 'nb21', string> = {
   pro:   'gemini-3-pro-image',     // Nano Banana Pro (nicht mehr -preview)
   flash: 'gemini-3.1-flash-image', // Nano Banana 2
+  // Nano Banana 2.1, seit 6.10.2026 allgemein verfügbar. Die Kennung folgt
+  // NICHT dem bisherigen Muster (kein „gemini-3.x-flash-image") — sie stammt
+  // aus der Modellliste der API und ist per echtem Aufruf geprüft.
+  nb21:  'gemini-nano-banana-2.1',
 }
 
 // Die Modellkennungen, wie sie im Feld `model` der OpenAI-Bild-API stehen.
@@ -51,6 +55,7 @@ function istOpenAI(m: GenModel): m is OpenAIKey {
 const MODEL_LABELS: Record<GenModel, string> = {
   pro:      'Nano Banana Pro (Gemini 3 Pro)',
   flash:    'Nano Banana 2 (Gemini 3.1 Flash)',
+  nb21:     'Nano Banana 2.1',
   openai:   'ChatGPT Image (gpt-image-2)',
   flare:    'GPT Image 2.5 Flare',
   sunburst: 'GPT Image 2.5 Sunburst',
@@ -199,7 +204,7 @@ function detectMime(b64: string): string {
 async function callGemini(
   body: GenerateBody,
   signal: AbortSignal,
-  modelKey: 'pro' | 'flash',
+  modelKey: 'pro' | 'flash' | 'nb21',
 ): Promise<{ image: string; prompt: string }> {
   const apiKey = process.env.GOOGLE_AI_API_KEY
   if (!apiKey) throw new Error('GOOGLE_AI_API_KEY not configured')
@@ -259,11 +264,11 @@ export async function generateImage(req: Request, res: Response) {
     // drin, landete er stillschweigend bei Gemini und der Nutzer bekam ein Bild
     // (und eine Rechnung) vom falschen Anbieter, ohne dass irgendwo ein Fehler
     // auftauchte. Kommt ein Modell dazu, gehört es HIER hinein.
-    const ALLE_MODELLE: GenModel[] = ['flare', 'sunburst', 'openai', 'pro', 'flash']
+    const ALLE_MODELLE: GenModel[] = ['flare', 'sunburst', 'openai', 'pro', 'flash', 'nb21']
     const gewuenscht = body.model as GenModel | undefined
     const modelKey: GenModel = ALLE_MODELLE.includes(gewuenscht as GenModel)
       ? (gewuenscht as GenModel)
-      : 'flare'
+      : 'nb21'
     if (gewuenscht && gewuenscht !== modelKey) {
       console.warn(`[generate] unbekanntes Modell "${gewuenscht}" — Rückfall auf ${modelKey}`)
     }

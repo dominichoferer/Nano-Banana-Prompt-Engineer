@@ -61,7 +61,7 @@ export const MOCKUP_TYPES: MockupTypeDef[] = [
 
 // ── Image-generation model config ────────────────────────────────────────────
 
-export type GenModel = 'flare' | 'sunburst' | 'openai' | 'pro' | 'flash'
+export type GenModel = 'flare' | 'sunburst' | 'openai' | 'pro' | 'flash' | 'nb21'
 
 /** Anbieter-Familie. Die Oberfläche zeigt zwei Schalter, je einen pro Familie. */
 export type GenFamilie = 'gpt' | 'nano'
@@ -126,6 +126,16 @@ export const GEN_MODELS: GenModelDef[] = [
     preis: { '1K': 'ca. $0.09', '2K': 'ca. $0.36', '4K': 'ca. $0.71' },
   },
   {
+    // Seit 6.10.2026. Preise nach $30 je 1 Mio. Bild-Token (halb so viel wie
+    // Nano Banana 2) — aus einer Drittquelle, nicht aus Googles eigener
+    // Preisliste, deshalb „ca.". Dazu kommen Denk-Token ($7.50 je 1 Mio.),
+    // gemessen rund 1 300 je Bild, also etwa einen Cent.
+    id: 'nb21', familie: 'nano', label: 'Nano Banana 2.1',
+    hint: 'gemini-nano-banana-2.1', ratios: GEMINI_RATIOS,
+    staerke: 'Neueste Fassung — bessere Bildqualität, genauere Schrift, konsistentere Figuren, halber Preis von Nano Banana 2',
+    preis: { '1K': 'ca. $0.034', '2K': 'ca. $0.05', '4K': 'ca. $0.076' },
+  },
+  {
     id: 'pro', familie: 'nano', label: 'Nano Banana Pro',
     hint: 'gemini-3-pro-image', ratios: GEMINI_RATIOS,
     staerke: 'Kräftige, saubere Bilder und der beste Umgang mit vielen Referenzen',
@@ -162,11 +172,14 @@ export const GEN_FAMILIEN: GenFamilieDef[] = [
     koennen: 'Deutlich günstiger und meist schneller, stark bei Licht, Farbe und '
       + 'fotografischer Anmutung. Verträgt viele Referenzbilder auf einmal. Kein '
       + 'transparenter Hintergrund.',
-    preis: '$0.067 bis $0.24 je Bild',
+    preis: 'ca. $0.034 bis $0.24 je Bild',
   },
 ]
 
-export const STANDARD_MODELL: GenModel = 'flare'
+// Nano Banana 2.1 ist beim Öffnen angehakt — neueste Fassung, halber Preis.
+// Schaltet man GPT Image dazu, steht dort Flare bereit.
+export const STANDARD_MODELL: GenModel = 'nb21'
+export const STANDARD_GPT: GenModel = 'flare'
 
 const GPT_MODELLE: GenModel[] = ['flare', 'sunburst', 'openai']
 
@@ -195,6 +208,8 @@ export function modellDef(id: GenModel): GenModelDef {
  */
 const DAUER: Record<GenModel, Record<'1K' | '2K' | '4K', [number, number]>> = {
   flash:  { '1K': [15, 30], '2K': [20, 45], '4K': [35, 70] },
+  // Gemessen: 2K ohne Referenzbild 24 s. Mit Referenzen eher mehr.
+  nb21:   { '1K': [15, 35], '2K': [20, 50], '4K': [35, 80] },
   pro:    { '1K': [25, 60], '2K': [30, 90], '4K': [40, 110] },
   openai: { '1K': [25, 50], '2K': [45, 90], '4K': [110, 180] },
   // Nicht gemessen, sondern aus der Ankündigung abgeleitet: Flare nennt „50 %

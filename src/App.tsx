@@ -4,7 +4,7 @@ import PromptDisplay from './components/PromptDisplay'
 import GeneratedImage from './components/GeneratedImage'
 import type { UploadedImage, AnalysisStatus, GenerationStatus, PromptMode, FocusArea, MockupType, GenModel, GenFamilie, OpenAIFormat } from './types'
 import { CHANGE_AREAS, MOCKUP_TYPES, GEN_MODELS, GEN_FAMILIEN, OPENAI_FORMATS, ratiosForModel,
-  STANDARD_MODELL, istGpt, familieVon, kannTransparenz, modellDef } from './types'
+  STANDARD_MODELL, STANDARD_GPT, istGpt, familieVon, kannTransparenz, modellDef } from './types'
 import type { RefRolle, RefBild } from './referenzen'
 import { baueLegende, begrenze, setzeManifest } from './referenzen'
 import { willGesichtLock, identitaetsKlausel } from './identitaet'
@@ -673,7 +673,7 @@ function JobPanel({
   const [aktiveFamilien, setAktiveFamilien] = useState<GenFamilie[]>(
     () => ausVorlage<GenFamilie[]>(v, 'aktiveFamilien', [familieVon(STANDARD_MODELL)]))
   const [familienModell, setFamilienModell] = useState<Record<GenFamilie, GenModel>>(
-    () => ausVorlage<Record<GenFamilie, GenModel>>(v, 'familienModell', { gpt: STANDARD_MODELL, nano: 'pro' }))
+    () => ausVorlage<Record<GenFamilie, GenModel>>(v, 'familienModell', { gpt: STANDARD_GPT, nano: 'nb21' }))
   // Reihenfolge kommt aus GEN_FAMILIEN, damit GPT Image immer zuerst rechnet.
   const aktiveModelle = useMemo(
     () => GEN_FAMILIEN.filter((f) => aktiveFamilien.includes(f.id)).map((f) => familienModell[f.id]),
@@ -2087,7 +2087,7 @@ function AppMain({ userEmail, authEnabled, onLogout }: { userEmail: string | nul
   const [quickPrompt, setQuickPrompt] = useState('')
   const [quickFamilie, setQuickFamilie] = useState<GenFamilie>(familieVon(STANDARD_MODELL))
   const [quickFamilienModell, setQuickFamilienModell] = useState<Record<GenFamilie, GenModel>>(
-    { gpt: STANDARD_MODELL, nano: 'pro' })
+    { gpt: STANDARD_GPT, nano: 'nb21' })
   const quickModel = quickFamilienModell[quickFamilie]
   const [quickResolution, setQuickResolution] = useState<'1K' | '2K' | '4K' | 'auto'>('2K')
   const [quickAspectRatio, setQuickAspectRatio] = useState('1:1')
