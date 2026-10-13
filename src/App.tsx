@@ -5,16 +5,16 @@ import GeneratedImage from './components/GeneratedImage'
 import type { UploadedImage, AnalysisStatus, GenerationStatus, PromptMode, FocusArea, MockupType, GenModel, GenFamilie, OpenAIFormat } from './types'
 import { CHANGE_AREAS, MOCKUP_TYPES, GEN_MODELS, GEN_FAMILIEN, OPENAI_FORMATS, ratiosForModel,
   STANDARD_MODELL, STANDARD_GPT, istGpt, familieVon, kannTransparenz, modellDef } from './types'
-import type { RefRolle, RefBild } from './referenzen'
-import { baueLegende, begrenze, setzeManifest } from './referenzen'
-import { willGesichtLock, identitaetsKlausel } from './identitaet'
+import type { RefRolle } from './referenzen'
+import { begrenze } from './referenzen'
+import { willGesichtLock } from './identitaet'
 import type { Pruefergebnis, Abweichung } from './nachschaerfen'
-import { korrekturBlock, mitKorrektur, befund } from './nachschaerfen'
+import { korrekturBlock, befund } from './nachschaerfen'
 import type { SchattenArt } from './schatten'
 import { SCHATTEN_ARTEN, schattenAusAuftrag, willFreigestellt } from './schatten'
 import type { SchattenQuelle } from './produkt'
-import { brauchtIdentitaet, produktKlausel, freistellKlausel, schattenKlausel } from './produkt'
 import SchattenStudio from './components/SchattenStudio'
+import { baueVolltext } from './volltext'
 
 pdfjsLib.GlobalWorkerOptions.workerSrc = `https://unpkg.com/pdfjs-dist@${pdfjsLib.version}/build/pdf.worker.min.mjs`
 
@@ -966,10 +966,6 @@ function JobPanel({
     (img: UploadedImage) => geordneteBilder.findIndex((b) => b.id === img.id) + 1,
     [geordneteBilder])
 
-  /** Bildnummern (1-basiert) je Rolle — für die Identitätsklausel. */
-  const nummernMit = (rolle: RefRolle) => geordneteBilder
-    .map((b, i) => ({ b, nr: i + 1 })).filter((x) => x.b.rolle === rolle).map((x) => x.nr)
-
   const toggleChange = useCallback((area: FocusArea) =>
     setChangeAreas((p) => p.includes(area) ? p.filter((a) => a !== area) : [...p, area]), [])
 
@@ -1079,37 +1075,20 @@ function JobPanel({
       // und wie damit umzugehen ist. Die Identitätsklausel ans ENDE — beim
       // Bildmodell wiegt das zuletzt Gelesene schwerer, und die Identität muss
       // jede freiere Formulierung davor überstimmen.
-      const rollenListe: RefBild[] = bilder.map((img, i) => ({
-        ...referenceImages[i], rolle: img.rolle, zeigt: img.name,
+      const rollenListe = bilder.map((img, i) => ({
+        ...referenceImages[i], rolle: img.rolle, zeigt: img.name, faceLock: img.faceLock,
       }))
-      const legende = baueLegende(rollenListe)
-      // Am Ende steht, was jede freiere Formulierung davor überstimmen muss.
-      // Ein Gesicht nur dann, wenn überhaupt ein Mensch im Spiel ist — bei
-      // einem Produktfoto stattdessen die Treue zum Teil.
-      const mitMensch = brauchtIdentitaet(prompt,
-        bilder.some((b) => b.rolle === 'person'), bilder.some((b) => b.faceLock))
-      const freistellen = transparent && aktiveModelle.every(kannTransparenz)
-      const klausel = [
-        mitMensch
-          ? identitaetsKlausel(nummernMit('ausgang'), nummernMit('ziel'))
-          // Die Treue zum Bauteil nur, wenn ausdrücklich ein Produktfoto
-          // retuschiert wird — beim Mockup ist das Ausgangsmaterial eine
-          // Druckvorlage, dort gelten die Artwork-Regeln im JSON.
-          : produktAktiv ? produktKlausel(nummernMit('ausgang')) : '',
-        freistellen ? freistellKlausel(schattenQuelle, schattenArt) : schattenKlausel(schattenArt),
-      ].filter(Boolean).join('\n\n')
-      // Der Prompt-Schreiber kennt die endgültige Reihenfolge nicht sicher —
-      // er sieht die Bilder, aber die Liste wird hier gebildet. Deshalb wird
-      // der Block `reference_images` deterministisch gesetzt statt ihm
-      // überlassen: Sonst stehen am Ende zwei Listen im JSON, die sich
-      // widersprechen. Ist der Prompt kein JSON (etwa von Hand überschrieben),
-      // bleibt er unverändert.
-      const mitManifest = setzeManifest(prompt, rollenListe)
-      const grundtext = [legende, mitManifest, klausel].filter(Boolean).join('\n\n')
-      // Die Korrektur kommt ANS ENDE des unveränderten Prompts, nicht an seine
-      // Stelle. Ein neu geschriebener Prompt verliert regelmässig Dinge, die
-      // vorher stimmten.
-      const volltext = korrektur ? mitKorrektur(grundtext, korrektur.block) : grundtext
+      // Der Aufbau (Legende, Manifest, Klauseln, Korrektur) liegt in
+      // volltext.ts — derselbe Code läuft im MCP-Server.
+      const volltext = baueVolltext({
+        prompt,
+        bilder: rollenListe,
+        produktfoto: produktAktiv,
+        freistellen: transparent && aktiveModelle.every(kannTransparenz),
+        schattenArt,
+        schattenQuelle,
+        korrektur: korrektur?.block,
+      })
       letzterVolltext.current = volltext
 
       // Der misslungene Versuch geht als LETZTES Bild mit — der Korrekturblock
@@ -1167,7 +1146,7 @@ function JobPanel({
       setGenProgress(null)
     }
   }, [prompt, aktiveModelle, selectedResolution, selectedAspectRatio, selectedOutputFormat,
-      transparent, variantCount, geordneteBilder, nummernMit, schattenQuelle, schattenArt, produktAktiv])
+      transparent, variantCount, geordneteBilder, schattenQuelle, schattenArt, produktAktiv])
 
   // Dem Elternteil einen Lesezugriff auf den aktuellen Stand geben. Nur so
   // lässt sich ein Auftrag duplizieren, ohne den gesamten Zustand nach oben zu
@@ -1206,6 +1185,8 @@ function JobPanel({
           // Der Prompt dient nur der Einordnung — gekürzt reicht und spart Platz.
           prompt: letzterVolltext.current.slice(0, 6000),
           freigestellt: transparent,
+          schattenSpaeter: transparent && produktAktiv && schattenQuelle === 'app'
+            && !!schattenArt && schattenArt !== 'keiner',
         }),
       })
       if (!res.ok) throw new Error(await fehlerText(res, 'Prüfung fehlgeschlagen'))
@@ -1226,7 +1207,7 @@ function JobPanel({
     } finally {
       setPruefLaeuft(false)
     }
-  }, [geordneteBilder, userDescription, transparent])
+  }, [geordneteBilder, userDescription, transparent, produktAktiv, schattenQuelle, schattenArt])
   pruefeBildRef.current = pruefeBild
 
   /**

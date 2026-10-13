@@ -119,6 +119,13 @@ export async function pruefeErgebnis(req: Request, res: Response): Promise<void>
     prompt?: string
     /** War das Ergebnis freigestellt? Dann liegt es hier auf Weiss. */
     freigestellt?: boolean
+    /**
+     * Schatten/Spiegelung legt die App erst NACH der Generierung darunter. Das
+     * Modell sollte also bewusst KEINEN malen — ein fehlender Schatten ist
+     * dann kein Mangel, sondern genau richtig. Ohne diesen Hinweis meldete die
+     * Prüfung „Kontaktschatten fehlt" als schweren Fehler.
+     */
+    schattenSpaeter?: boolean
   }
   const bild = body.bild ? ausDatenUrl(body.bild) : null
   if (!bild) {
@@ -143,6 +150,12 @@ export async function pruefeErgebnis(req: Request, res: Response): Promise<void>
       + 'background and is shown here flattened onto white: everything that is not pure white '
       + 'around the product was in the alpha channel. Grey speckles or a veil there are a defect.'
     : 'THE GENERATED IMAGE — this is what you are judging:' })
+  if (body.schattenSpaeter) {
+    teile.splice(teile.length - 1, 0, { text: 'NOTE: any shadow or reflection the brief asks for is added '
+      + 'AFTERWARDS in compositing. This image was deliberately requested WITHOUT shadow or reflection. '
+      + 'A missing shadow or reflection is correct and must NOT be reported. Any shadow, haze or grey '
+      + 'veil that IS present is a deviation.' })
+  }
   teile.push({ inlineData: bild })
 
   let letzterFehler: unknown
