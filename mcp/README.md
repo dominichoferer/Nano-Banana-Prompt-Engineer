@@ -13,31 +13,38 @@ Läuft lokal, ohne Anmeldung, mit den Schlüsseln aus der `.env` des Projekts.
 
 Bilder landen unter `~/Pictures/HERON AI Studio/<Datum>/`, der gesendete Prompt als `.txt` daneben.
 
-## Bauen
+## Installieren und aktualisieren
 
 ```
-npm run mcp:build      # → mcp/dist/heron-studio.mjs (eine Datei, braucht node_modules danach nicht mehr)
+npm run mcp:install    # baut und kopiert nach ~/.claude/mcp/heron-studio/heron-studio.mjs
 ```
 
-Nach jeder Änderung an `server/`, `src/` oder `mcp/` neu bauen und Claude neu starten.
+Die installierte Datei ist eigenständig: Sie braucht weder `node_modules` noch den Projektordner.
+Die Schlüssel liest sie aus der Datei in `HERON_STUDIO_ENV`
+(`~/.secrets/_HERON/Prompt & Image Generator /.env`). Nach einer Änderung an `server/`, `src/` oder
+`mcp/` einfach erneut `npm run mcp:install` und Claude neu starten.
 
-## Eintragen
+## Eintragen (einmalig, schon erledigt)
 
-Claude Code (für alle Projekte):
+Claude Code — gilt auch für die Claude-Erweiterung in VS Code:
 
 ```
-claude mcp add --scope user heron-studio -- /usr/local/bin/node "<Projektpfad>/mcp/dist/heron-studio.mjs"
+claude mcp add --scope user heron-studio \
+  -e "HERON_STUDIO_ENV=$HOME/.secrets/_HERON/Prompt & Image Generator /.env" \
+  -- /usr/local/bin/node ~/.claude/mcp/heron-studio/heron-studio.mjs
 ```
 
-Claude Desktop: in `~/Library/Application Support/Claude/claude_desktop_config.json`
+Claude Desktop — `~/Library/Application Support/Claude/claude_desktop_config.json`:
 
 ```json
 "mcpServers": {
-  "heron-studio": { "command": "/usr/local/bin/node", "args": ["<Projektpfad>/mcp/dist/heron-studio.mjs"] }
+  "heron-studio": {
+    "command": "/usr/local/bin/node",
+    "args": ["/Users/hod/.claude/mcp/heron-studio/heron-studio.mjs"],
+    "env": { "HERON_STUDIO_ENV": "/Users/hod/.secrets/_HERON/Prompt & Image Generator /.env" }
+  }
 }
 ```
-
-Wird das Projekt verschoben, die Pfade anpassen — oder `HERON_STUDIO_DIR` setzen, damit die `.env` gefunden wird.
 
 ## Testen
 

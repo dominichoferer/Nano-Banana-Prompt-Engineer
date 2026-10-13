@@ -51,7 +51,9 @@ const HIER = path.dirname(fileURLToPath(import.meta.url))
 const PROJEKT = process.env.HERON_STUDIO_DIR
   ?? [path.resolve(HIER, '..'), path.resolve(HIER, '../..')].find((p) => existsSync(path.join(p, '.env')))
   ?? path.resolve(HIER, '..')
-dotenv.config({ path: path.join(PROJEKT, '.env'), quiet: true })
+// HERON_STUDIO_ENV zeigt direkt auf die Schlüsseldatei — so läuft der Server
+// auch von ~/.claude/mcp aus, ohne dass der Projektordner gebraucht wird.
+dotenv.config({ path: process.env.HERON_STUDIO_ENV ?? path.join(PROJEKT, '.env'), quiet: true })
 
 const AUSGABE_STANDARD = path.join(homedir(), 'Pictures', 'HERON AI Studio')
 const MAX_KANTE = 1600
@@ -521,4 +523,4 @@ server.registerTool('schatten_setzen', {
 })
 
 await server.connect(new StdioServerTransport())
-console.error(`[heron-studio] bereit — Projekt: ${PROJEKT}`)
+console.error(`[heron-studio] bereit — Schlüssel: ${process.env.HERON_STUDIO_ENV ?? path.join(PROJEKT, '.env')}`)

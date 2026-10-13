@@ -12,7 +12,8 @@
     "preview": "vite preview",
     "hash-password": "tsx scripts/hash-password.ts",
     "key:anthropic": "node scripts/anthropic-key.mjs",
-    "mcp:build": "esbuild mcp/server.ts --bundle --platform=node --format=esm --target=node20 --outfile=mcp/dist/heron-studio.mjs --banner:js=\"import { createRequire as __cr } from 'module'; const require = __cr(import.meta.url);\" --log-level=warning"
+    "mcp:build": "esbuild mcp/server.ts --bundle --platform=node --format=esm --target=node20 --outfile=mcp/dist/heron-studio.mjs --banner:js=\"import { createRequire as __cr } from 'module'; const require = __cr(import.meta.url);\" --log-level=warning",
+    "mcp:install": "npm run mcp:build && mkdir -p ~/.claude/mcp/heron-studio && cp mcp/dist/heron-studio.mjs ~/.claude/mcp/heron-studio/"
   },
   "dependencies": {
     "@anthropic-ai/sdk": "^0.126.0",
